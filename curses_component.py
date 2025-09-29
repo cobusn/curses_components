@@ -1,0 +1,308 @@
+import curses
+import math
+from itertools import islice
+
+class QuitApplication(Exception):
+    pass
+
+class CursesComponent:
+
+    def __init__(self, fg_color='green', bg_color='black', max_col_width=20, float_fmt='.2f'):
+        self.fg_color = fg_color
+        self.bg_color = bg_color
+        self.max_col_width = max_col_width
+        self.float_fmt = float_fmt
+        self.top_row = 0
+        self.left_col = 0
+        self.row_idx = 0
+        self.col_idx = 0
+        self.input_mode = False
+        self.input_buffer = ""
+        self.search_mode = False
+        self.search_buffer = ""
+        self.last_search = ""
+
+    def display(self, data, columns=None):
+        try:
+            curses.wrapper(self._display, data, columns)
+        except QuitApplication:
+            pass
+
+    def _display(self, stdscr, data, columns):
+        self.stdscr = stdscr
+        self.data = data
+        self.columns = columns
+        self._init_curses()
+        self._prepare_data()
+        self._event_loop()
+
+    def _init_curses(self):
+        curses.curs_set(0)
+        curses.start_color()
+        curses.use_default_colors()
+        self.fg_color_map = {'green': curses.COLOR_GREEN, 'black': curses.COLOR_BLACK, 'white': curses.COLOR_WHITE, 'red': curses.COLOR_RED, 'blue': curses.COLOR_BLUE, 'yellow': curses.COLOR_YELLOW, 'magenta': curses.COLOR_MAGENTA, 'cyan': curses.COLOR_CYAN}
+        self.bg_color_map = {'green': curses.COLOR_GREEN, 'black': curses.COLOR_BLACK, 'white': curses.COLOR_WHITE, 'red': curses.COLOR_RED, 'blue': curses.COLOR_BLUE, 'yellow': curses.COLOR_YELLOW, 'magenta': curses.COLOR_MAGENTA, 'cyan': curses.COLOR_CYAN}
+        curses.init_pair(1, self.fg_color_map.get(self.fg_color, curses.COLOR_GREEN), self.bg_color_map.get(self.bg_color, curses.COLOR_BLACK))
+        curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+
+    def _prepare_data(self):
+        if not self.columns:
+            if isinstance(self.data, list) and self.data:
+                self.columns = list(self.data[0].keys())
+            elif not isinstance(self.data, list):
+                # For iterators
+                self.data = list(self.data)
+                if self.data:
+                    self.columns = list(self.data[0].keys())
+
+        if not self.columns:
+            self.columns = []
+
+        self.col_widths = self._get_col_widths()
+
+    def _get_col_widths(self):
+        col_widths = {col: len(col) for col in self.columns}
+        for row in self.data:
+            for col in self.columns:
+                col_widths[col] = min(self.max_col_width, max(col_widths[col], len(str(row.get(col, '')))))
+        return col_widths
+
+    def _update_col_width(self, delta):
+        col = self.columns[self.col_idx]
+        self.col_widths[col] = max(1, self.col_widths[col] + delta)
+
+    def is_number(self, s):
+        try:
+            float(s)
+            return True
+        except (ValueError, TypeError):
+            return False
+
+    def _draw(self):
+        self.stdscr.erase()
+        height, width = self.stdscr.getmaxyx()
+
+        # Draw header
+        x = 1
+        for i, col in enumerate(self.columns[self.left_col:]):
+            if x + self.col_widths[col] > width:
+                break
+            try:
+                self.stdscr.addstr(0, x, col.center(self.col_widths[col]), curses.A_REVERSE)
+            except curses.error:
+                pass
+            x += self.col_widths[col] + 1
+
+        # Draw data
+        for i, row in enumerate(self.data[self.top_row:]):
+            if i + 1 >= height:
+                break
+            y = i + 1
+            x = 1
+            for j, col in enumerate(self.columns[self.left_col:]):
+                if x + self.col_widths[col] > width:
+                    break
+                val = row.get(col, '')
+                if isinstance(val, float):
+                    val = format(val, self.float_fmt)
+
+                align = str.rjust if self.is_number(val) else str.ljust
+
+                try:
+                    display_val = align(str(val), self.col_widths[col])
+                    if self.last_search and self.last_search in str(val):
+                        start_idx = str(val).find(self.last_search)
+                        end_idx = start_idx + len(self.last_search)
+
+                        if i == self.row_idx - self.top_row and j == self.col_idx - self.left_col:
+                            if y < height and x < width:
+                                self.stdscr.addstr(y, x, display_val[:start_idx], curses.color_pair(1) | curses.A_REVERSE)
+                                self.stdscr.addstr(y, x + start_idx, display_val[start_idx:end_idx], curses.color_pair(2) | curses.A_REVERSE)
+                                self.stdscr.addstr(y, x + end_idx, display_val[end_idx:], curses.color_pair(1) | curses.A_REVERSE)
+                        else:
+                            if y < height and x < width:
+                                self.stdscr.addstr(y, x, display_val[:start_idx], curses.color_pair(1))
+                                self.stdscr.addstr(y, x + start_idx, display_val[start_idx:end_idx], curses.color_pair(2))
+                                self.stdscr.addstr(y, x + end_idx, display_val[end_idx:], curses.color_pair(1))
+                    else:
+                        if i == self.row_idx - self.top_row and j == self.col_idx - self.left_col:
+                            if y < height and x < width:
+                                self.stdscr.addstr(y, x, display_val, curses.color_pair(1) | curses.A_REVERSE)
+                        else:
+                            if y < height and x < width:
+                                self.stdscr.addstr(y, x, display_val, curses.color_pair(1))
+                    if x + self.col_widths[col] < width:
+                        self.stdscr.addstr(y, x + self.col_widths[col], " ")
+                except curses.error:
+                    pass
+                x += self.col_widths[col] + 1
+
+        if self.input_mode:
+            self.stdscr.addstr(height - 1, 0, ":" + self.input_buffer)
+        elif self.search_mode:
+            self.stdscr.addstr(height - 1, 0, "/" + self.search_buffer)
+
+        self.stdscr.noutrefresh()
+        curses.doupdate()
+
+    def _event_loop(self):
+        while True:
+            self._draw()
+            key = self.stdscr.getch()
+
+            if self.input_mode:
+                if key in [curses.KEY_ENTER, 10, 13]:
+                    self.input_mode = False
+                    if self.input_buffer == "q":
+                        raise QuitApplication
+                    elif self.input_buffer == "$":
+                        self.row_idx = len(self.data) - 1
+                        if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
+                            self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
+                    else:
+                        try:
+                            row = int(self.input_buffer)
+                            self.row_idx = min(len(self.data) - 1, max(0, row - 1))
+                            if self.row_idx < self.top_row or self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
+                                self.top_row = self.row_idx
+                        except ValueError:
+                            pass
+                    self.input_buffer = ""
+                elif key == 27: # Escape
+                    self.input_mode = False
+                    self.input_buffer = ""
+                elif key >= ord('0') and key <= ord('9'):
+                    self.input_buffer += chr(key)
+                elif key == curses.KEY_BACKSPACE or key == 127:
+                    self.input_buffer = self.input_buffer[:-1]
+                continue
+            elif self.search_mode:
+                if key in [curses.KEY_ENTER, 10, 13]:
+                    self.search_mode = False
+                    self.last_search = self.search_buffer
+                    self._find_next_match()
+                    self.search_buffer = ""
+                elif key == 27: # Escape
+                    self.search_mode = False
+                    self.search_buffer = ""
+                elif key >= 32 and key <= 126: # Printable characters
+                    self.search_buffer += chr(key)
+                elif key == curses.KEY_BACKSPACE or key == 127:
+                    self.search_buffer = self.search_buffer[:-1]
+                continue
+
+            if key == curses.KEY_UP or key == ord('k'):
+                self.row_idx = max(0, self.row_idx - 1)
+                if self.row_idx < self.top_row:
+                    self.top_row = self.row_idx
+            elif key == curses.KEY_DOWN or key == ord('j'):
+                self.row_idx = min(len(self.data) - 1, self.row_idx + 1)
+                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
+                    self.top_row += 1
+            elif key == curses.KEY_LEFT or key == ord('h'):
+                self.col_idx = max(0, self.col_idx - 1)
+                if self.col_idx < self.left_col:
+                    self.left_col = self.col_idx
+            elif key == curses.KEY_RIGHT or key == ord('l'):
+                self.col_idx = min(len(self.columns) - 1, self.col_idx + 1)
+                visible_cols = self._get_visible_cols()
+                if self.col_idx >= self.left_col + len(visible_cols) and self.left_col + len(visible_cols) < len(self.columns):
+                    self.left_col += 1
+            elif key == ord('$'):
+                self.col_idx = len(self.columns) - 1
+                visible_cols = self._get_visible_cols()
+                while self.col_idx >= self.left_col + len(visible_cols) and self.left_col + len(visible_cols) < len(self.columns):
+                    self.left_col += 1
+            elif key == ord('^'):
+                self.col_idx = 0
+                self.left_col = 0
+            elif curses.keyname(key) == b'kLFT5': # Ctrl + Left
+                self._update_col_width(-1)
+            elif curses.keyname(key) == b'kRIT5': # Ctrl + Right
+                self._update_col_width(1)
+            elif key == curses.KEY_HOME:
+                self.row_idx = 0
+                self.top_row = 0
+            elif key == curses.KEY_END:
+                self.row_idx = len(self.data) - 1
+                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
+                    self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
+            elif key == curses.KEY_PPAGE:
+                self.row_idx = max(0, self.row_idx - (self.stdscr.getmaxyx()[0] - 1))
+                self.top_row = self.row_idx
+            elif key == curses.KEY_NPAGE:
+                self.row_idx = min(len(self.data) - 1, self.row_idx + (self.stdscr.getmaxyx()[0] - 1))
+                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
+                    self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
+            elif key == ord(':'):
+                self.input_mode = True
+                self.input_buffer = ""
+            elif key == ord('/'):
+                self.search_mode = True
+                self.search_buffer = ""
+
+    def _get_visible_cols(self):
+        width = self.stdscr.getmaxyx()[1]
+        visible_cols = []
+        x = 1
+        if not self.columns[self.left_col:]:
+            return []
+        for col in self.columns[self.left_col:]:
+            if x + self.col_widths[col] > width:
+                break
+            visible_cols.append(col)
+            x += self.col_widths[col] + 1
+        return visible_cols
+
+    def _find_next_match(self):
+        if not self.last_search:
+            return
+
+        start_row = self.row_idx
+        start_col = self.col_idx + 1
+
+        # Search from current position to end of data
+        for r in range(start_row, len(self.data)):
+            for c in range(start_col if r == start_row else 0, len(self.columns)):
+                val = str(self.data[r].get(self.columns[c], ''))
+                if self.last_search in val:
+                    self.row_idx = r
+                    self.col_idx = c
+                    self._adjust_scroll_position()
+                    return
+            start_col = 0 # Reset start_col for subsequent rows
+
+        # If not found, search from beginning to current position
+        for r in range(0, len(self.data)):
+            for c in range(0, len(self.columns)):
+                if r == start_row and c >= self.col_idx:
+                    return # Already searched this part
+                val = str(self.data[r].get(self.columns[c], ''))
+                if self.last_search in val:
+                    self.row_idx = r
+                    self.col_idx = c
+                    self._adjust_scroll_position()
+                    return
+
+    def _adjust_scroll_position(self):
+        # Adjust top_row
+        if self.row_idx < self.top_row:
+            self.top_row = self.row_idx
+        elif self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
+            self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
+
+        # Adjust left_col
+        visible_cols = self._get_visible_cols()
+        if self.col_idx < self.left_col:
+            self.left_col = self.col_idx
+        elif self.col_idx >= self.left_col + len(visible_cols):
+            # Find the new left_col to make current col_idx visible
+            current_col_width_sum = 0
+            new_left_col = 0
+            for i in range(len(self.columns)):
+                if i == self.col_idx:
+                    break
+                current_col_width_sum += self.col_widths[self.columns[i]] + 1
+                if current_col_width_sum >= self.stdscr.getmaxyx()[1]:
+                    new_left_col = i + 1
+            self.left_col = new_left_col
