@@ -1,0 +1,4 @@
+General Purpose curses based control to view spreadsheet
+like data (e.g. csv).  The control accept data in
+a cannonical format and only focus on the User Interface,
+not data processing

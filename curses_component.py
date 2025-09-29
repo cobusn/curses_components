@@ -102,39 +102,9 @@ class CursesComponent:
             for j, col in enumerate(self.columns[self.left_col:]):
                 if x + self.col_widths[col] > width:
                     break
-                val = row.get(col, '')
-                if isinstance(val, float):
-                    val = format(val, self.float_fmt)
+                
+                self._draw_cell(y, x, i, j, row, col)
 
-                align = str.rjust if self.is_number(val) else str.ljust
-
-                try:
-                    display_val = align(str(val), self.col_widths[col])
-                    if self.last_search and self.last_search in str(val):
-                        start_idx = str(val).find(self.last_search)
-                        end_idx = start_idx + len(self.last_search)
-
-                        if i == self.row_idx - self.top_row and j == self.col_idx - self.left_col:
-                            if y < height and x < width:
-                                self.stdscr.addstr(y, x, display_val[:start_idx], curses.color_pair(1) | curses.A_REVERSE)
-                                self.stdscr.addstr(y, x + start_idx, display_val[start_idx:end_idx], curses.color_pair(2) | curses.A_REVERSE)
-                                self.stdscr.addstr(y, x + end_idx, display_val[end_idx:], curses.color_pair(1) | curses.A_REVERSE)
-                        else:
-                            if y < height and x < width:
-                                self.stdscr.addstr(y, x, display_val[:start_idx], curses.color_pair(1))
-                                self.stdscr.addstr(y, x + start_idx, display_val[start_idx:end_idx], curses.color_pair(2))
-                                self.stdscr.addstr(y, x + end_idx, display_val[end_idx:], curses.color_pair(1))
-                    else:
-                        if i == self.row_idx - self.top_row and j == self.col_idx - self.left_col:
-                            if y < height and x < width:
-                                self.stdscr.addstr(y, x, display_val, curses.color_pair(1) | curses.A_REVERSE)
-                        else:
-                            if y < height and x < width:
-                                self.stdscr.addstr(y, x, display_val, curses.color_pair(1))
-                    if x + self.col_widths[col] < width:
-                        self.stdscr.addstr(y, x + self.col_widths[col], " ")
-                except curses.error:
-                    pass
                 x += self.col_widths[col] + 1
 
         if self.input_mode:
@@ -144,6 +114,45 @@ class CursesComponent:
 
         self.stdscr.noutrefresh()
         curses.doupdate()
+
+    def _draw_cell(self, y, x, i, j, row, col):
+        val = row.get(col, '')
+        if isinstance(val, float):
+            val = format(val, self.float_fmt)
+
+        align = str.rjust if self.is_number(val) else str.ljust
+        display_val = align(str(val), self.col_widths[col])
+
+        is_current_cell = (i == self.row_idx - self.top_row and j == self.col_idx - self.left_col)
+        
+        try:
+            if self.last_search and self.last_search in str(val):
+                self._draw_highlighted_cell(y, x, display_val, is_current_cell)
+            else:
+                attr = curses.color_pair(1)
+                if is_current_cell:
+                    attr |= curses.A_REVERSE
+                self.stdscr.addstr(y, x, display_val, attr)
+
+            if x + self.col_widths[col] < self.stdscr.getmaxyx()[1]:
+                self.stdscr.addstr(y, x + self.col_widths[col], " ")
+
+        except curses.error:
+            pass
+
+    def _draw_highlighted_cell(self, y, x, display_val, is_current_cell):
+        start_idx = str(display_val).find(self.last_search)
+        end_idx = start_idx + len(self.last_search)
+        
+        attr = curses.color_pair(1)
+        highlight_attr = curses.color_pair(2)
+        if is_current_cell:
+            attr |= curses.A_REVERSE
+            highlight_attr |= curses.A_REVERSE
+
+        self.stdscr.addstr(y, x, display_val[:start_idx], attr)
+        self.stdscr.addstr(y, x + start_idx, display_val[start_idx:end_idx], highlight_attr)
+        self.stdscr.addstr(y, x + end_idx, display_val[end_idx:], attr)
 
     def _event_loop(self):
         while True:
@@ -240,6 +249,8 @@ class CursesComponent:
             elif key == ord('/'):
                 self.search_mode = True
                 self.search_buffer = ""
+            elif key == ord('n'):
+                self._find_next_match()
 
     def _get_visible_cols(self):
         width = self.stdscr.getmaxyx()[1]
@@ -258,31 +269,31 @@ class CursesComponent:
         if not self.last_search:
             return
 
-        start_row = self.row_idx
-        start_col = self.col_idx + 1
+        def cell_generator():
+            start_row = self.row_idx
+            start_col = self.col_idx
 
-        # Search from current position to end of data
-        for r in range(start_row, len(self.data)):
-            for c in range(start_col if r == start_row else 0, len(self.columns)):
-                val = str(self.data[r].get(self.columns[c], ''))
-                if self.last_search in val:
-                    self.row_idx = r
-                    self.col_idx = c
-                    self._adjust_scroll_position()
-                    return
-            start_col = 0 # Reset start_col for subsequent rows
+            # Yield cells from current position to the end
+            for r in range(start_row, len(self.data)):
+                for c in range(start_col + 1 if r == start_row else 0, len(self.columns)):
+                    yield r, c, str(self.data[r].get(self.columns[c], ''))
+                # Reset start_col for subsequent rows
+                if r == start_row:
+                    start_col = -1
 
-        # If not found, search from beginning to current position
-        for r in range(0, len(self.data)):
-            for c in range(0, len(self.columns)):
-                if r == start_row and c >= self.col_idx:
-                    return # Already searched this part
-                val = str(self.data[r].get(self.columns[c], ''))
-                if self.last_search in val:
-                    self.row_idx = r
-                    self.col_idx = c
-                    self._adjust_scroll_position()
-                    return
+            # Yield cells from the beginning to the current position
+            for r in range(len(self.data)):
+                for c in range(len(self.columns)):
+                    if r == self.row_idx and c == self.col_idx:
+                        return
+                    yield r, c, str(self.data[r].get(self.columns[c], ''))
+
+        for r, c, val in cell_generator():
+            if self.last_search in val:
+                self.row_idx = r
+                self.col_idx = c
+                self._adjust_scroll_position()
+                return
 
     def _adjust_scroll_position(self):
         # Adjust top_row
