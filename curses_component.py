@@ -1,9 +1,10 @@
 import curses
-import math
 from itertools import islice
+
 
 class QuitApplication(Exception):
     pass
+
 
 class CursesComponent:
 
@@ -40,9 +41,22 @@ class CursesComponent:
         curses.curs_set(0)
         curses.start_color()
         curses.use_default_colors()
-        self.fg_color_map = {'green': curses.COLOR_GREEN, 'black': curses.COLOR_BLACK, 'white': curses.COLOR_WHITE, 'red': curses.COLOR_RED, 'blue': curses.COLOR_BLUE, 'yellow': curses.COLOR_YELLOW, 'magenta': curses.COLOR_MAGENTA, 'cyan': curses.COLOR_CYAN}
-        self.bg_color_map = {'green': curses.COLOR_GREEN, 'black': curses.COLOR_BLACK, 'white': curses.COLOR_WHITE, 'red': curses.COLOR_RED, 'blue': curses.COLOR_BLUE, 'yellow': curses.COLOR_YELLOW, 'magenta': curses.COLOR_MAGENTA, 'cyan': curses.COLOR_CYAN}
-        curses.init_pair(1, self.fg_color_map.get(self.fg_color, curses.COLOR_GREEN), self.bg_color_map.get(self.bg_color, curses.COLOR_BLACK))
+        self.fg_color_map = {
+            'black': curses.COLOR_BLACK,
+            'blue': curses.COLOR_BLUE,
+            'cyan': curses.COLOR_CYAN,
+            'green': curses.COLOR_GREEN,
+            'magenta': curses.COLOR_MAGENTA,
+            'red': curses.COLOR_RED,
+            'white': curses.COLOR_WHITE,
+            'yellow': curses.COLOR_YELLOW,
+        }
+        self.bg_color_map = self.fg_color_map
+        curses.init_pair(
+            1,
+            self.fg_color_map.get(self.fg_color, curses.COLOR_GREEN),
+            self.bg_color_map.get(self.bg_color, curses.COLOR_BLACK)
+        )
         curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_YELLOW)
 
     def _prepare_data(self):
@@ -102,7 +116,7 @@ class CursesComponent:
             for j, col in enumerate(self.columns[self.left_col:]):
                 if x + self.col_widths[col] > width:
                     break
-                
+
                 self._draw_cell(y, x, i, j, row, col)
 
                 x += self.col_widths[col] + 1
@@ -124,7 +138,7 @@ class CursesComponent:
         display_val = align(str(val), self.col_widths[col])
 
         is_current_cell = (i == self.row_idx - self.top_row and j == self.col_idx - self.left_col)
-        
+
         try:
             if self.last_search and self.last_search in str(val):
                 self._draw_highlighted_cell(y, x, display_val, is_current_cell)
@@ -143,7 +157,7 @@ class CursesComponent:
     def _draw_highlighted_cell(self, y, x, display_val, is_current_cell):
         start_idx = str(display_val).find(self.last_search)
         end_idx = start_idx + len(self.last_search)
-        
+
         attr = curses.color_pair(1)
         highlight_attr = curses.color_pair(2)
         if is_current_cell:
@@ -154,50 +168,62 @@ class CursesComponent:
         self.stdscr.addstr(y, x + start_idx, display_val[start_idx:end_idx], highlight_attr)
         self.stdscr.addstr(y, x + end_idx, display_val[end_idx:], attr)
 
+    def _handle_input_mode(self, key):
+        if not self.input_mode:
+            return False
+
+        if key in [curses.KEY_ENTER, 10, 13]:
+            self.input_mode = False
+            if self.input_buffer == "q":
+                raise QuitApplication
+            elif self.input_buffer == "$":
+                self.row_idx = len(self.data) - 1
+                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
+                    self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
+            else:
+                try:
+                    row = int(self.input_buffer)
+                    self.row_idx = min(len(self.data) - 1, max(0, row - 1))
+                    if self.row_idx < self.top_row or self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
+                        self.top_row = self.row_idx
+                except ValueError:
+                    pass
+            self.input_buffer = ""
+        elif key == 27:  # Escape
+            self.input_mode = False
+            self.input_buffer = ""
+        elif key >= ord('0') and key <= ord('9'):
+            self.input_buffer += chr(key)
+        elif key == curses.KEY_BACKSPACE or key == 127:
+            self.input_buffer = self.input_buffer[:-1]
+
+        return True
+
+    def _handle_search_mode(self, key):
+        if not self.search_mode:
+            return False
+
+        if key in [curses.KEY_ENTER, 10, 13]:
+            self.search_mode = False
+            self.last_search = self.search_buffer
+            self._find_next_match()
+            self.search_buffer = ""
+        elif key == 27:  # Escape
+            self.search_mode = False
+            self.search_buffer = ""
+        elif key >= 32 and key <= 126:  # Printable characters
+            self.search_buffer += chr(key)
+        elif key == curses.KEY_BACKSPACE or key == 127:
+            self.search_buffer = self.search_buffer[:-1]
+
+        return True
+
     def _event_loop(self):
         while True:
             self._draw()
             key = self.stdscr.getch()
 
-            if self.input_mode:
-                if key in [curses.KEY_ENTER, 10, 13]:
-                    self.input_mode = False
-                    if self.input_buffer == "q":
-                        raise QuitApplication
-                    elif self.input_buffer == "$":
-                        self.row_idx = len(self.data) - 1
-                        if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
-                            self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
-                    else:
-                        try:
-                            row = int(self.input_buffer)
-                            self.row_idx = min(len(self.data) - 1, max(0, row - 1))
-                            if self.row_idx < self.top_row or self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
-                                self.top_row = self.row_idx
-                        except ValueError:
-                            pass
-                    self.input_buffer = ""
-                elif key == 27: # Escape
-                    self.input_mode = False
-                    self.input_buffer = ""
-                elif key >= ord('0') and key <= ord('9'):
-                    self.input_buffer += chr(key)
-                elif key == curses.KEY_BACKSPACE or key == 127:
-                    self.input_buffer = self.input_buffer[:-1]
-                continue
-            elif self.search_mode:
-                if key in [curses.KEY_ENTER, 10, 13]:
-                    self.search_mode = False
-                    self.last_search = self.search_buffer
-                    self._find_next_match()
-                    self.search_buffer = ""
-                elif key == 27: # Escape
-                    self.search_mode = False
-                    self.search_buffer = ""
-                elif key >= 32 and key <= 126: # Printable characters
-                    self.search_buffer += chr(key)
-                elif key == curses.KEY_BACKSPACE or key == 127:
-                    self.search_buffer = self.search_buffer[:-1]
+            if self._handle_input_mode(key) or self._handle_search_mode(key):
                 continue
 
             if key == curses.KEY_UP or key == ord('k'):
@@ -206,7 +232,7 @@ class CursesComponent:
                     self.top_row = self.row_idx
             elif key == curses.KEY_DOWN or key == ord('j'):
                 self.row_idx = min(len(self.data) - 1, self.row_idx + 1)
-                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
+                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
                     self.top_row += 1
             elif key == curses.KEY_LEFT or key == ord('h'):
                 self.col_idx = max(0, self.col_idx - 1)
@@ -225,23 +251,23 @@ class CursesComponent:
             elif key == ord('^'):
                 self.col_idx = 0
                 self.left_col = 0
-            elif curses.keyname(key) == b'kLFT5': # Ctrl + Left
+            elif curses.keyname(key) == b'kLFT5':  # Ctrl + Left
                 self._update_col_width(-1)
-            elif curses.keyname(key) == b'kRIT5': # Ctrl + Right
+            elif curses.keyname(key) == b'kRIT5':  # Ctrl + Right
                 self._update_col_width(1)
             elif key == curses.KEY_HOME:
                 self.row_idx = 0
                 self.top_row = 0
             elif key == curses.KEY_END:
                 self.row_idx = len(self.data) - 1
-                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
+                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
                     self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
             elif key == curses.KEY_PPAGE:
                 self.row_idx = max(0, self.row_idx - (self.stdscr.getmaxyx()[0] - 1))
                 self.top_row = self.row_idx
             elif key == curses.KEY_NPAGE:
                 self.row_idx = min(len(self.data) - 1, self.row_idx + (self.stdscr.getmaxyx()[0] - 1))
-                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] -1:
+                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
                     self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
             elif key == ord(':'):
                 self.input_mode = True
