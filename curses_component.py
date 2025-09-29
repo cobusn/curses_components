@@ -1,10 +1,9 @@
 import curses
+import math
 from itertools import islice
-
 
 class QuitApplication(Exception):
     pass
-
 
 class CursesComponent:
 
@@ -41,22 +40,9 @@ class CursesComponent:
         curses.curs_set(0)
         curses.start_color()
         curses.use_default_colors()
-        self.fg_color_map = {
-            'black': curses.COLOR_BLACK,
-            'blue': curses.COLOR_BLUE,
-            'cyan': curses.COLOR_CYAN,
-            'green': curses.COLOR_GREEN,
-            'magenta': curses.COLOR_MAGENTA,
-            'red': curses.COLOR_RED,
-            'white': curses.COLOR_WHITE,
-            'yellow': curses.COLOR_YELLOW,
-        }
-        self.bg_color_map = self.fg_color_map
-        curses.init_pair(
-            1,
-            self.fg_color_map.get(self.fg_color, curses.COLOR_GREEN),
-            self.bg_color_map.get(self.bg_color, curses.COLOR_BLACK)
-        )
+        self.fg_color_map = {'green': curses.COLOR_GREEN, 'black': curses.COLOR_BLACK, 'white': curses.COLOR_WHITE, 'red': curses.COLOR_RED, 'blue': curses.COLOR_BLUE, 'yellow': curses.COLOR_YELLOW, 'magenta': curses.COLOR_MAGENTA, 'cyan': curses.COLOR_CYAN}
+        self.bg_color_map = {'green': curses.COLOR_GREEN, 'black': curses.COLOR_BLACK, 'white': curses.COLOR_WHITE, 'red': curses.COLOR_RED, 'blue': curses.COLOR_BLUE, 'yellow': curses.COLOR_YELLOW, 'magenta': curses.COLOR_MAGENTA, 'cyan': curses.COLOR_CYAN}
+        curses.init_pair(1, self.fg_color_map.get(self.fg_color, curses.COLOR_GREEN), self.bg_color_map.get(self.bg_color, curses.COLOR_BLACK))
         curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_YELLOW)
 
     def _prepare_data(self):
@@ -96,10 +82,13 @@ class CursesComponent:
         self.stdscr.erase()
         height, width = self.stdscr.getmaxyx()
 
+        row_num_width = len(str(len(self.data))) + 2
+
         # Draw header
-        x = 1
+        self.stdscr.addstr(0, 0, " ".center(row_num_width), curses.A_REVERSE)
+        x = row_num_width
         for i, col in enumerate(self.columns[self.left_col:]):
-            if x + self.col_widths[col] > width:
+            if x + self.col_widths[col] + 1 > width:
                 break
             try:
                 self.stdscr.addstr(0, x, col.center(self.col_widths[col]), curses.A_REVERSE)
@@ -109,22 +98,40 @@ class CursesComponent:
 
         # Draw data
         for i, row in enumerate(self.data[self.top_row:]):
-            if i + 1 >= height:
+            if i + 2 >= height:
                 break
             y = i + 1
-            x = 1
-            for j, col in enumerate(self.columns[self.left_col:]):
-                if x + self.col_widths[col] > width:
-                    break
+            
+            row_num_str = str(self.top_row + i + 1).rjust(row_num_width - 1) + " "
+            self.stdscr.addstr(y, 0, row_num_str, curses.A_REVERSE)
 
+            x = row_num_width
+            for j, col in enumerate(self.columns[self.left_col:]):
+                if x + self.col_widths[col] + 1 > width:
+                    break
+                
                 self._draw_cell(y, x, i, j, row, col)
 
                 x += self.col_widths[col] + 1
+        
+        # Draw status bar
+        try:
+            if width > 0:
+                self.stdscr.addstr(height - 1, 0, " " * (width - 1))
+            
+            status_bar_left = ""
+            if self.input_mode:
+                status_bar_left = ":" + self.input_buffer
+            elif self.search_mode:
+                status_bar_left = "/" + self.search_buffer
+            
+            self.stdscr.addstr(height - 1, 0, status_bar_left)
 
-        if self.input_mode:
-            self.stdscr.addstr(height - 1, 0, ":" + self.input_buffer)
-        elif self.search_mode:
-            self.stdscr.addstr(height - 1, 0, "/" + self.search_buffer)
+            status_bar_right = f" {self.row_idx + 1}/{len(self.data)} "
+            if width > len(status_bar_right) + 1:
+                self.stdscr.addstr(height - 1, width - len(status_bar_right) - 1, status_bar_right)
+        except curses.error:
+            pass
 
         self.stdscr.noutrefresh()
         curses.doupdate()
@@ -138,7 +145,7 @@ class CursesComponent:
         display_val = align(str(val), self.col_widths[col])
 
         is_current_cell = (i == self.row_idx - self.top_row and j == self.col_idx - self.left_col)
-
+        
         try:
             if self.last_search and self.last_search in str(val):
                 self._draw_highlighted_cell(y, x, display_val, is_current_cell)
@@ -157,7 +164,7 @@ class CursesComponent:
     def _draw_highlighted_cell(self, y, x, display_val, is_current_cell):
         start_idx = str(display_val).find(self.last_search)
         end_idx = start_idx + len(self.last_search)
-
+        
         attr = curses.color_pair(1)
         highlight_attr = curses.color_pair(2)
         if is_current_cell:
@@ -172,19 +179,20 @@ class CursesComponent:
         if not self.input_mode:
             return False
 
+        height, width = self.stdscr.getmaxyx()
         if key in [curses.KEY_ENTER, 10, 13]:
             self.input_mode = False
             if self.input_buffer == "q":
                 raise QuitApplication
             elif self.input_buffer == "$":
                 self.row_idx = len(self.data) - 1
-                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
-                    self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
+                if self.row_idx >= self.top_row + height - 2:
+                    self.top_row = self.row_idx - (height - 3)
             else:
                 try:
                     row = int(self.input_buffer)
                     self.row_idx = min(len(self.data) - 1, max(0, row - 1))
-                    if self.row_idx < self.top_row or self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
+                    if self.row_idx < self.top_row or self.row_idx >= self.top_row + height - 2:
                         self.top_row = self.row_idx
                 except ValueError:
                     pass
@@ -222,6 +230,7 @@ class CursesComponent:
         while True:
             self._draw()
             key = self.stdscr.getch()
+            height, width = self.stdscr.getmaxyx()
 
             if self._handle_input_mode(key) or self._handle_search_mode(key):
                 continue
@@ -232,7 +241,7 @@ class CursesComponent:
                     self.top_row = self.row_idx
             elif key == curses.KEY_DOWN or key == ord('j'):
                 self.row_idx = min(len(self.data) - 1, self.row_idx + 1)
-                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
+                if self.row_idx >= self.top_row + height - 2:
                     self.top_row += 1
             elif key == curses.KEY_LEFT or key == ord('h'):
                 self.col_idx = max(0, self.col_idx - 1)
@@ -240,14 +249,10 @@ class CursesComponent:
                     self.left_col = self.col_idx
             elif key == curses.KEY_RIGHT or key == ord('l'):
                 self.col_idx = min(len(self.columns) - 1, self.col_idx + 1)
-                visible_cols = self._get_visible_cols()
-                if self.col_idx >= self.left_col + len(visible_cols) and self.left_col + len(visible_cols) < len(self.columns):
-                    self.left_col += 1
+                self._adjust_scroll_position()
             elif key == ord('$'):
                 self.col_idx = len(self.columns) - 1
-                visible_cols = self._get_visible_cols()
-                while self.col_idx >= self.left_col + len(visible_cols) and self.left_col + len(visible_cols) < len(self.columns):
-                    self.left_col += 1
+                self._adjust_scroll_position()
             elif key == ord('^'):
                 self.col_idx = 0
                 self.left_col = 0
@@ -260,15 +265,15 @@ class CursesComponent:
                 self.top_row = 0
             elif key == curses.KEY_END:
                 self.row_idx = len(self.data) - 1
-                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
-                    self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
+                if self.row_idx >= self.top_row + height - 2:
+                    self.top_row = self.row_idx - (height - 3)
             elif key == curses.KEY_PPAGE:
-                self.row_idx = max(0, self.row_idx - (self.stdscr.getmaxyx()[0] - 1))
+                self.row_idx = max(0, self.row_idx - (height - 2))
                 self.top_row = self.row_idx
             elif key == curses.KEY_NPAGE:
-                self.row_idx = min(len(self.data) - 1, self.row_idx + (self.stdscr.getmaxyx()[0] - 1))
-                if self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
-                    self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
+                self.row_idx = min(len(self.data) - 1, self.row_idx + (height - 2))
+                if self.row_idx >= self.top_row + height - 2:
+                    self.top_row = self.row_idx - (height - 3)
             elif key == ord(':'):
                 self.input_mode = True
                 self.input_buffer = ""
@@ -280,12 +285,13 @@ class CursesComponent:
 
     def _get_visible_cols(self):
         width = self.stdscr.getmaxyx()[1]
+        row_num_width = len(str(len(self.data))) + 2
         visible_cols = []
-        x = 1
+        x = row_num_width
         if not self.columns[self.left_col:]:
             return []
         for col in self.columns[self.left_col:]:
-            if x + self.col_widths[col] > width:
+            if x + self.col_widths[col] + 1 > width:
                 break
             visible_cols.append(col)
             x += self.col_widths[col] + 1
@@ -322,24 +328,20 @@ class CursesComponent:
                 return
 
     def _adjust_scroll_position(self):
+        height, width = self.stdscr.getmaxyx()
         # Adjust top_row
         if self.row_idx < self.top_row:
             self.top_row = self.row_idx
-        elif self.row_idx >= self.top_row + self.stdscr.getmaxyx()[0] - 1:
-            self.top_row = self.row_idx - (self.stdscr.getmaxyx()[0] - 2)
+        elif self.row_idx >= self.top_row + height - 2:
+            self.top_row = self.row_idx - (height - 3)
 
         # Adjust left_col
-        visible_cols = self._get_visible_cols()
         if self.col_idx < self.left_col:
             self.left_col = self.col_idx
-        elif self.col_idx >= self.left_col + len(visible_cols):
-            # Find the new left_col to make current col_idx visible
-            current_col_width_sum = 0
-            new_left_col = 0
-            for i in range(len(self.columns)):
-                if i == self.col_idx:
+        else:
+            visible_cols = self._get_visible_cols()
+            while self.col_idx >= self.left_col + len(visible_cols):
+                if self.left_col + len(visible_cols) >= len(self.columns):
                     break
-                current_col_width_sum += self.col_widths[self.columns[i]] + 1
-                if current_col_width_sum >= self.stdscr.getmaxyx()[1]:
-                    new_left_col = i + 1
-            self.left_col = new_left_col
+                self.left_col += 1
+                visible_cols = self._get_visible_cols()
