@@ -1,9 +1,21 @@
 import curses
-import math
-from itertools import islice
+
 
 class QuitApplication(Exception):
     pass
+
+
+COLORS = {
+    'green': curses.COLOR_GREEN,
+    'black': curses.COLOR_BLACK,
+    'white': curses.COLOR_WHITE,
+    'red': curses.COLOR_RED,
+    'blue': curses.COLOR_BLUE,
+    'yellow': curses.COLOR_YELLOW,
+    'magenta': curses.COLOR_MAGENTA,
+    'cyan': curses.COLOR_CYAN
+}
+
 
 class CursesComponent:
 
@@ -40,9 +52,12 @@ class CursesComponent:
         curses.curs_set(0)
         curses.start_color()
         curses.use_default_colors()
-        self.fg_color_map = {'green': curses.COLOR_GREEN, 'black': curses.COLOR_BLACK, 'white': curses.COLOR_WHITE, 'red': curses.COLOR_RED, 'blue': curses.COLOR_BLUE, 'yellow': curses.COLOR_YELLOW, 'magenta': curses.COLOR_MAGENTA, 'cyan': curses.COLOR_CYAN}
-        self.bg_color_map = {'green': curses.COLOR_GREEN, 'black': curses.COLOR_BLACK, 'white': curses.COLOR_WHITE, 'red': curses.COLOR_RED, 'blue': curses.COLOR_BLUE, 'yellow': curses.COLOR_YELLOW, 'magenta': curses.COLOR_MAGENTA, 'cyan': curses.COLOR_CYAN}
-        curses.init_pair(1, self.fg_color_map.get(self.fg_color, curses.COLOR_GREEN), self.bg_color_map.get(self.bg_color, curses.COLOR_BLACK))
+        self.fg_color_map = dict(COLORS)
+        self.bg_color_map = dict(COLORS)
+        curses.init_pair(1, self.fg_color_map.get(
+            self.fg_color, curses.COLOR_GREEN),
+            self.bg_color_map.get(self.bg_color, curses.COLOR_BLACK)
+        )
         curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_YELLOW)
 
     def _prepare_data(self):
@@ -64,7 +79,10 @@ class CursesComponent:
         col_widths = {col: len(col) for col in self.columns}
         for row in self.data:
             for col in self.columns:
-                col_widths[col] = min(self.max_col_width, max(col_widths[col], len(str(row.get(col, '')))))
+                col_widths[col] = min(
+                    self.max_col_width,
+                    max(col_widths[col], len(str(row.get(col, ''))))
+                )
         return col_widths
 
     def _update_col_width(self, delta):
@@ -79,29 +97,43 @@ class CursesComponent:
             return False
 
     def _draw(self):
+        """main draw function"""
         self.stdscr.erase()
         height, width = self.stdscr.getmaxyx()
-
         row_num_width = len(str(len(self.data))) + 2
 
         # Draw header
+        i, col = self.draw_header(row_num_width, width)
+
+        # Draw data
+        self._draw_data(height, i, row_num_width, width, col)
+
+        # Draw status bar
+        self._draw_status_bar(width, height)
+
+        self.stdscr.noutrefresh()
+        curses.doupdate()
+
+    def draw_header(self, row_num_width, width):
         self.stdscr.addstr(0, 0, " ".center(row_num_width), curses.A_REVERSE)
         x = row_num_width
         for i, col in enumerate(self.columns[self.left_col:]):
             if x + self.col_widths[col] + 1 > width:
                 break
             try:
-                self.stdscr.addstr(0, x, col.center(self.col_widths[col]), curses.A_REVERSE)
+                self.stdscr.addstr(0, x, col.center(self.col_widths[col] + 1), curses.A_REVERSE)
             except curses.error:
                 pass
             x += self.col_widths[col] + 1
+        return i, col
 
+    def _draw_data(self, height, i, row_num_width, width, col):
         # Draw data
         for i, row in enumerate(self.data[self.top_row:]):
             if i + 2 >= height:
                 break
             y = i + 1
-            
+
             row_num_str = str(self.top_row + i + 1).rjust(row_num_width - 1) + " "
             self.stdscr.addstr(y, 0, row_num_str, curses.A_REVERSE)
 
@@ -109,22 +141,23 @@ class CursesComponent:
             for j, col in enumerate(self.columns[self.left_col:]):
                 if x + self.col_widths[col] + 1 > width:
                     break
-                
+
                 self._draw_cell(y, x, i, j, row, col)
 
                 x += self.col_widths[col] + 1
-        
+
+    def _draw_status_bar(self, width, height):
         # Draw status bar
         try:
             if width > 0:
                 self.stdscr.addstr(height - 1, 0, " " * (width - 1))
-            
+
             status_bar_left = ""
             if self.input_mode:
                 status_bar_left = ":" + self.input_buffer
             elif self.search_mode:
                 status_bar_left = "/" + self.search_buffer
-            
+
             self.stdscr.addstr(height - 1, 0, status_bar_left)
 
             status_bar_right = f" {self.row_idx + 1}/{len(self.data)} "
@@ -132,9 +165,6 @@ class CursesComponent:
                 self.stdscr.addstr(height - 1, width - len(status_bar_right) - 1, status_bar_right)
         except curses.error:
             pass
-
-        self.stdscr.noutrefresh()
-        curses.doupdate()
 
     def _draw_cell(self, y, x, i, j, row, col):
         val = row.get(col, '')
@@ -145,7 +175,7 @@ class CursesComponent:
         display_val = align(str(val), self.col_widths[col])
 
         is_current_cell = (i == self.row_idx - self.top_row and j == self.col_idx - self.left_col)
-        
+
         try:
             if self.last_search and self.last_search in str(val):
                 self._draw_highlighted_cell(y, x, display_val, is_current_cell)
@@ -164,7 +194,7 @@ class CursesComponent:
     def _draw_highlighted_cell(self, y, x, display_val, is_current_cell):
         start_idx = str(display_val).find(self.last_search)
         end_idx = start_idx + len(self.last_search)
-        
+
         attr = curses.color_pair(1)
         highlight_attr = curses.color_pair(2)
         if is_current_cell:
@@ -172,17 +202,19 @@ class CursesComponent:
             highlight_attr |= curses.A_REVERSE
 
         self.stdscr.addstr(y, x, display_val[:start_idx], attr)
-        self.stdscr.addstr(y, x + start_idx, display_val[start_idx:end_idx], highlight_attr)
+        self.stdscr.addstr(
+            y, x + start_idx, display_val[start_idx:end_idx], highlight_attr
+        )
         self.stdscr.addstr(y, x + end_idx, display_val[end_idx:], attr)
 
-    def _handle_input_mode(self, key):
+    def _handle_input_mode(self, key):  #noqa
         if not self.input_mode:
             return False
 
         height, width = self.stdscr.getmaxyx()
         if key in [curses.KEY_ENTER, 10, 13]:
             self.input_mode = False
-            if self.input_buffer == "q":
+            if self.input_buffer == "quit" or self.input_buffer == "q":
                 raise QuitApplication
             elif self.input_buffer == "$":
                 self.row_idx = len(self.data) - 1
@@ -200,6 +232,10 @@ class CursesComponent:
         elif key == 27:  # Escape
             self.input_mode = False
             self.input_buffer = ""
+        elif key == ord("$"):
+            self.input_buffer += chr(key)
+        elif key >= ord('a') and key <= ord('z'):
+            self.input_buffer += chr(key)
         elif key >= ord('0') and key <= ord('9'):
             self.input_buffer += chr(key)
         elif key == curses.KEY_BACKSPACE or key == 127:
@@ -226,7 +262,7 @@ class CursesComponent:
 
         return True
 
-    def _event_loop(self):
+    def _event_loop(self): #noqa
         while True:
             self._draw()
             key = self.stdscr.getch()
@@ -297,7 +333,7 @@ class CursesComponent:
             x += self.col_widths[col] + 1
         return visible_cols
 
-    def _find_next_match(self):
+    def _find_next_match(self):   #noqa
         if not self.last_search:
             return
 
