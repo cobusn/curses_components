@@ -1,6 +1,8 @@
 import curses
 import logging
 import itertools
+import pyperclip
+import re
 
 logging.basicConfig(filename='help_debug.log', level=logging.DEBUG)
 
@@ -182,11 +184,21 @@ class GridComponent:
         except (ValueError, TypeError):
             return False
 
+    def _draw_selected_cell_info_bar(self, width):
+        self.stdscr.addstr(0, 0, " " * (width - 1))
+        if self.data and self.row_idx < len(self.data) and self.col_idx < len(self.columns):
+            val = self.data[self.row_idx].get(self.columns[self.col_idx], '')
+            display_text = f"> {str(val)}"
+            self.stdscr.addstr(0, 0, display_text[:width - 1])
+
     def _draw(self):
         """main draw function"""
         self.stdscr.erase()
         height, width = self.stdscr.getmaxyx()
         row_num_width = len(str(len(self.data))) + 2
+
+        # Draw selected cell info bar
+        self._draw_selected_cell_info_bar(width)
 
         # Draw header
         i, col = self.draw_header(row_num_width, width)
@@ -201,13 +213,13 @@ class GridComponent:
         curses.doupdate()
 
     def draw_header(self, row_num_width, width):
-        self.stdscr.addstr(0, 0, " ".center(row_num_width), curses.color_pair(3) | curses.A_REVERSE)
+        self.stdscr.addstr(1, 0, " ".center(row_num_width), curses.color_pair(3) | curses.A_REVERSE)
         x = row_num_width
         for i, col in enumerate(self.columns[self.left_col:]):
             if x + self.col_widths[col] + 1 > width:
                 break
             try:
-                self.stdscr.addstr(0, x, col.center(self.col_widths[col] + 1), curses.color_pair(3) | curses.A_REVERSE)
+                self.stdscr.addstr(1, x, col.center(self.col_widths[col] + 1), curses.color_pair(3) | curses.A_REVERSE)
             except curses.error:
                 pass
             x += self.col_widths[col] + 1
@@ -216,9 +228,9 @@ class GridComponent:
     def _draw_data(self, height, i, row_num_width, width, col):
         # Draw data
         for i, row in enumerate(self.data[self.top_row:]):
-            if i + 2 >= height:
+            if i + 3 >= height:
                 break
-            y = i + 1
+            y = i + 2
 
             row_num_str = str(self.top_row + i + 1).rjust(row_num_width - 1) + " "
             self.stdscr.addstr(y, 0, row_num_str, curses.color_pair(3) | curses.A_REVERSE)
@@ -293,43 +305,57 @@ class GridComponent:
         )
         self.stdscr.addstr(y, x + end_idx, display_val[end_idx:], attr)
 
+    def _cmd_quit(self):
+        raise QuitApplication
+
+    def _cmd_copy(self):
+        if self.data and self.row_idx < len(self.data) and self.col_idx < len(self.columns):
+            val = self.data[self.row_idx].get(self.columns[self.col_idx], '')
+            pyperclip.copy(str(val))
+
+    def _cmd_help(self):
+        help_screen = Help(self.stdscr)
+        help_screen.display()
+
+    def _cmd_dollar(self):
+        height, width = self.stdscr.getmaxyx()
+        self.row_idx = len(self.data) - 1
+        if self.row_idx >= self.top_row + height - 3:
+            self.top_row = self.row_idx - (height - 4)
+
     def _handle_input_mode(self, key):  #noqa
         if not self.input_mode:
             return False
+        self.commands = {
+            "$": self._cmd_dollar,
+            "copy": self._cmd_copy,
+            "help": self._cmd_help,
+            "q": self._cmd_quit,
+            "quit": self._cmd_quit,
+        }
 
-        height, width = self.stdscr.getmaxyx()
         if key in [curses.KEY_ENTER, 10, 13]:
             self.input_mode = False
-            if self.input_buffer.lower() in ["quit", "q"]:
-                raise QuitApplication
-            elif self.input_buffer.lower() == 'help':
-                help_screen = Help(self.stdscr)
-                help_screen.display()
-            elif self.input_buffer == "$":
-                self.row_idx = len(self.data) - 1
-                if self.row_idx >= self.top_row + height - 2:
-                    self.top_row = self.row_idx - (height - 3)
+            cmd = self.input_buffer.lower()
+            if cmd in self.commands:
+                self.commands[cmd]()
             else:
                 try:
+                    height, width = self.stdscr.getmaxyx()
                     row = int(self.input_buffer)
                     self.row_idx = min(len(self.data) - 1, max(0, row - 1))
-                    if self.row_idx < self.top_row or self.row_idx >= self.top_row + height - 2:
+                    if self.row_idx < self.top_row or self.row_idx >= self.top_row + height - 3:
                         self.top_row = self.row_idx
                 except ValueError:
                     pass
             self.input_buffer = ""
+        elif re.match(r"[a-z0-9$]", chr(key)):
+            self.input_buffer += chr(key)
         elif key == 27:  # Escape
             self.input_mode = False
             self.input_buffer = ""
-        elif key == ord("$"):
-            self.input_buffer += chr(key)
-        elif key >= ord('a') and key <= ord('z'):
-            self.input_buffer += chr(key)
-        elif key >= ord('0') and key <= ord('9'):
-            self.input_buffer += chr(key)
         elif key == curses.KEY_BACKSPACE or key == 127:
             self.input_buffer = self.input_buffer[:-1]
-
         return True
 
     def _handle_search_mode(self, key):
@@ -368,7 +394,7 @@ class GridComponent:
                     self.top_row = self.row_idx
             elif key == curses.KEY_DOWN or key == ord('j'):
                 self.row_idx = min(len(self.data) - 1, self.row_idx + 1)
-                if self.row_idx >= self.top_row + height - 2:
+                if self.row_idx >= self.top_row + height - 3:
                     self.top_row += 1
             elif key == curses.KEY_LEFT or key == ord('h'):
                 self.col_idx = max(0, self.col_idx - 1)
@@ -392,15 +418,15 @@ class GridComponent:
                 self.top_row = 0
             elif key == curses.KEY_END:
                 self.row_idx = len(self.data) - 1
-                if self.row_idx >= self.top_row + height - 2:
-                    self.top_row = self.row_idx - (height - 3)
+                if self.row_idx >= self.top_row + height - 3:
+                    self.top_row = self.row_idx - (height - 4)
             elif key == curses.KEY_PPAGE:
-                self.row_idx = max(0, self.row_idx - (height - 2))
+                self.row_idx = max(0, self.row_idx - (height - 3))
                 self.top_row = self.row_idx
             elif key == curses.KEY_NPAGE:
-                self.row_idx = min(len(self.data) - 1, self.row_idx + (height - 2))
-                if self.row_idx >= self.top_row + height - 2:
-                    self.top_row = self.row_idx - (height - 3)
+                self.row_idx = min(len(self.data) - 1, self.row_idx + (height - 3))
+                if self.row_idx >= self.top_row + height - 3:
+                    self.top_row = self.row_idx - (height - 4)
             elif key == ord(':'):
                 self.input_mode = True
                 self.input_buffer = ""
@@ -462,8 +488,8 @@ class GridComponent:
         # Adjust top_row
         if self.row_idx < self.top_row:
             self.top_row = self.row_idx
-        elif self.row_idx >= self.top_row + height - 2:
-            self.top_row = self.row_idx - (height - 3)
+        elif self.row_idx >= self.top_row + height - 3:
+            self.top_row = self.row_idx - (height - 4)
 
         # Adjust left_col
         if self.col_idx < self.left_col:
