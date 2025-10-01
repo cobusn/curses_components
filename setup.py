@@ -5,7 +5,7 @@ with open("requirements.md", "r") as f:
     long_description = f.read()
 
 setup(
-    name='curses_component',
+    name='curses_components',
     version=str(__version__),
     author='Cobus Nel',
     author_email='cobus@nel.org.za',
