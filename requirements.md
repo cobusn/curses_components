@@ -68,6 +68,13 @@ Entering the  `:` character enable a command mode with the following commands:
     by the number. 
   - ':$' take you to the last row
   - when `:q` and Enter is typed then exit the application
+  - named commands.  Any other is treated as a named command and will run a
+    function called `_cmd_<<name>>`.  The following commands are defined
+    initially:
+    - help
+    - copy
+    - sort [desc]
+    - quit (or q)
 
 ### Search mode
 `/` enable search mode.  When search mode is enabled, any text after the /
