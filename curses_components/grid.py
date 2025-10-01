@@ -219,7 +219,7 @@ class GridComponent:
             if x + self.col_widths[col] + 1 > width:
                 break
             try:
-                self.stdscr.addstr(1, x, col.center(self.col_widths[col] + 1), curses.color_pair(3) | curses.A_REVERSE)
+                self.stdscr.addstr(1, x, col.center(self.col_widths[col] + 1), curses.color_pair(3) | curses.A_REVERSE)  #noqa
             except curses.error:
                 pass
             x += self.col_widths[col] + 1
@@ -305,25 +305,28 @@ class GridComponent:
         )
         self.stdscr.addstr(y, x + end_idx, display_val[end_idx:], attr)
 
-    def _cmd_quit(self):
+    def _cmd_quit(self, cmds: list):
         raise QuitApplication
 
-    def _cmd_copy(self):
+    def _cmd_copy(self, cmds: list):
         if self.data and self.row_idx < len(self.data) and self.col_idx < len(self.columns):
             val = self.data[self.row_idx].get(self.columns[self.col_idx], '')
             pyperclip.copy(str(val))
 
-    def _cmd_help(self):
+    def _cmd_help(self, cmds: list):
         help_screen = Help(self.stdscr)
         help_screen.display()
 
-    def _cmd_dollar(self):
+    def _cmd_dollar(self, cmds: list):
         height, width = self.stdscr.getmaxyx()
         self.row_idx = len(self.data) - 1
         if self.row_idx >= self.top_row + height - 3:
             self.top_row = self.row_idx - (height - 4)
 
-    def _cmd_sort(self):
+    def _cmd_sort(self, cmds: list):
+
+        reverse = True if 'desc' in cmds else False
+
         if not self.data or self.col_idx >= len(self.columns):
             return
 
@@ -340,7 +343,7 @@ class GridComponent:
                     return (2, '')
                 return (1, str(value))
 
-        self.data.sort(key=sort_key)
+        self.data.sort(key=sort_key, reverse=reverse)
 
     def _handle_input_mode(self, key):  #noqa
         if not self.input_mode:
@@ -356,9 +359,10 @@ class GridComponent:
 
         if key in [curses.KEY_ENTER, 10, 13]:
             self.input_mode = False
-            cmd = self.input_buffer.lower()
+            cmds = self.input_buffer.lower().split()
+            cmd = cmds[0]
             if cmd in self.commands:
-                self.commands[cmd]()
+                self.commands[cmd](cmds[1:])
             else:
                 try:
                     height, width = self.stdscr.getmaxyx()
@@ -369,7 +373,7 @@ class GridComponent:
                 except ValueError:
                     pass
             self.input_buffer = ""
-        elif re.match(r"[a-z0-9$]", chr(key)):
+        elif re.match(r"[a-z0-9$\s]", chr(key)):
             self.input_buffer += chr(key)
         elif key == 27:  # Escape
             self.input_mode = False
