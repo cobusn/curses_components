@@ -323,6 +323,25 @@ class GridComponent:
         if self.row_idx >= self.top_row + height - 3:
             self.top_row = self.row_idx - (height - 4)
 
+    def _cmd_sort(self):
+        if not self.data or self.col_idx >= len(self.columns):
+            return
+
+        sort_column_key = self.columns[self.col_idx]
+
+        def sort_key(row):
+            value = row.get(sort_column_key, '')
+            try:
+                # Sort numbers numerically
+                return (0, float(value))
+            except (ValueError, TypeError):
+                # Sort empty strings last, other strings alphabetically
+                if value == '':
+                    return (2, '')
+                return (1, str(value))
+
+        self.data.sort(key=sort_key)
+
     def _handle_input_mode(self, key):  #noqa
         if not self.input_mode:
             return False
@@ -332,6 +351,7 @@ class GridComponent:
             "help": self._cmd_help,
             "q": self._cmd_quit,
             "quit": self._cmd_quit,
+            "sort": self._cmd_sort,
         }
 
         if key in [curses.KEY_ENTER, 10, 13]:
