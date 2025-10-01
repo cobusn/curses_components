@@ -2,3 +2,4 @@
 .ropeproject
 *.log
 *__pycache__*
+*.csv

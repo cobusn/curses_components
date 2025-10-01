@@ -1,28 +1,34 @@
-#!/usr/bin/env python
-"""
-Display a CSV file in a curses component.
-"""
-
-from curses_component import CursesComponent
 import csv
-import argparse
+import sys
+import logging
+import os
+from curses_components.grid import GridComponent
+
+os.environ.setdefault('TERM', 'xterm')
+
+logging.basicConfig(filename='debug.log', level=logging.DEBUG)
 
 
-def read_csv_data(filename):
+def main():
+    logging.debug("Starting the application")
+    if len(sys.argv) != 2:
+        logging.error(f"Usage: python {sys.argv[0]} <csv_file>")
+        print(f"Usage: python {sys.argv[0]} <csv_file>")
+        sys.exit(1)
+
+    csv_file = sys.argv[1]
+    logging.debug(f"CSV file: {csv_file}")
     data = []
-    with open(filename, 'r') as f:
+    with open(csv_file, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
             data.append(row)
-    return data
+    logging.debug(f"Data loaded: {len(data)} rows")
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('filename', nargs='?',
-                        default='customers.csv', help='The CSV file to display.')
-    args = parser.parse_args()
-
-    data = read_csv_data(args.filename)
-    component = CursesComponent()
+    component = GridComponent()
     component.display(data)
+    logging.debug("Application finished")
+
+
+if __name__ == "__main__":
+    main()

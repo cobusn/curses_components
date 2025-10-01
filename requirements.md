@@ -4,7 +4,7 @@ component.  The class will be used to display table data in a Text User
 interface format using the Curses Library.  The display will follow
 a similar interface as a text spreadsheet such as Lotus 123.
 
-## Interface
+## Programmers Interface
 * The class will have a .display(data, columns=None) method that will activate
   the display.
 * The class will have a __init__ constructor with the following variables:
@@ -40,8 +40,13 @@ and display the followng information:
   - numbers are right aligned
 
 ## User Interface and Navigation
-The control should have a vim like interface. 
+The control should have a vim like interface with the following modes:
 
+  - normal mode used for navigating the data
+  - command mode when a command is provided by staring to type the ":"
+    character; and
+  - search mode that is initiated by starting with the "/" character
+    -
 ### Normal mode
 In normal mode, provide the usual Navigational keys such as
 
@@ -73,6 +78,11 @@ When the application is in the Normal state and if a search have been activated
 then pressing the `n` button will move to the next position where the search
 match.
 
+### Help
+Help is enabled by typing the "?"  character in normal mode or ":help" in
+command mode.  When help is activated it will display a centered and scrollable
+curses window with a frame around the window. The help will display a list of 
+of commands for each mode
 # Test driver application
 Also provide a `test_control.py`  example that will read the CSV file provided
 as a parameter to the script.  `Customers.csv` can be used to test
