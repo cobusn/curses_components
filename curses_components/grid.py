@@ -132,8 +132,7 @@ class GridComponent:
         self.columns = []  # Initialized in _display
         self.max_rows = 0  # Initialized in _display
         self.col_widths = {}  # Initialized in _prepare_data
-        self.fg_color_map = dict(COLORS)  # Initialized here
-        self.bg_color_map = dict(COLORS)  # Initialized here
+        self.cmap = dict(COLORS)  # Initialized here
         self.commands = {  # Initialized in _handle_input_mode
             "$": self._cmd_dollar,
             "copy": self._cmd_copy,
@@ -142,7 +141,6 @@ class GridComponent:
             "quit": self._cmd_quit,
             "sort": self._cmd_sort,
         }
-
 
     def display(self, data, columns=None, max_rows=10000):
         """
@@ -175,12 +173,19 @@ class GridComponent:
         curses.curs_set(0)  # Hide cursor
         curses.start_color()
         curses.use_default_colors()
-        # fg_color_map and bg_color_map are now initialized in __init__
-        curses.init_pair(1, self.fg_color_map.get(self.fg_color, curses.COLOR_GREEN),
-                         self.bg_color_map.get(self.bg_color, curses.COLOR_BLACK))
-        curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_YELLOW)  # Search highlight
-        border_color_val = self.fg_color_map.get(self.border_color, curses.COLOR_CYAN)
-        curses.init_pair(3, border_color_val, self.bg_color_map.get(self.bg_color, curses.COLOR_BLACK))  # Border
+
+        bg = self.cmap.get(self.bg_color, curses.COLOR_BLACK)
+        fg = self.cmap.get(self.fg_color, curses.COLOR_GREEN)
+        curses.init_pair(1, fg, bg)   # Main display color
+
+        # Search highlight
+        curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+
+        # Margins
+        mc = self.cmap.get(self.border_color, curses.COLOR_CYAN)
+        curses.init_pair(3, mc, bg)
+
+        # Border
         curses.init_pair(4, curses.COLOR_BLACK, curses.COLOR_RED)  # Error message
 
     def _prepare_data(self):
@@ -197,8 +202,10 @@ class GridComponent:
         col_widths = {col: len(col) for col in self.columns}
         for row in self.data:
             for col in self.columns:
-                col_widths[col] = min(self.max_col_width,
-                                      max(col_widths[col], len(str(row.get(col, '')))))
+                col_widths[col] = min(
+                    self.max_col_width,
+                    max(col_widths[col], len(str(row.get(col, ''))))
+                )
         return col_widths
 
     def _update_col_width(self, delta):
@@ -286,9 +293,13 @@ class GridComponent:
                 elif self.search_mode:
                     status_bar_left = "/" + self.search_buffer
                 self.stdscr.addstr(max_height - 1, 0, status_bar_left)
-                status_bar_right = f" {self.row_idx + 1}/{len(self.data)} "
-                if max_width > len(status_bar_right) + 1:
-                    self.stdscr.addstr(max_height - 1, max_width - len(status_bar_right) - 1, status_bar_right)
+                sb_r = f" {self.row_idx + 1}/{len(self.data)} "
+                if max_width > len(sb_r) + 1:
+                    self.stdscr.addstr(
+                        max_height - 1,
+                        max_width - len(sb_r) - 1,
+                        sb_r
+                    )
         except curses.error:
             pass
 
@@ -308,6 +319,8 @@ class GridComponent:
                 attr = curses.color_pair(1)
                 if is_current_cell:
                     attr |= curses.A_REVERSE
+                else:
+                    attr |= curses.A_BOLD
                 self.stdscr.addstr(pos_y, pos_x, display_value, attr)
             if pos_x + self.col_widths[col_name] < self.stdscr.getmaxyx()[1]:
                 self.stdscr.addstr(pos_y, pos_x + self.col_widths[col_name], " ")
@@ -324,7 +337,7 @@ class GridComponent:
             attr |= curses.A_REVERSE
             highlight_attr |= curses.A_REVERSE
         self.stdscr.addstr(pos_y, pos_x, display_value[:start_idx], attr)
-        self.stdscr.addstr(pos_y, pos_x + start_idx, display_value[start_idx:end_idx], highlight_attr)
+        self.stdscr.addstr(pos_y, pos_x + start_idx, display_value[start_idx:end_idx], highlight_attr)  # noqa
         self.stdscr.addstr(pos_y, pos_x + end_idx, display_value[end_idx:], attr)
 
     def _cmd_quit(self, _cmds):
@@ -355,6 +368,7 @@ class GridComponent:
         if not self.data or self.col_idx >= len(self.columns):
             return
         sort_column_key = self.columns[self.col_idx]
+
         def sort_key(row):
             value = row.get(sort_column_key, '')
             try:
@@ -505,7 +519,7 @@ class GridComponent:
             start_col = self.col_idx
             # Search from current position to end
             for row_num in range(start_row, len(self.data)):
-                for col_num in range(start_col + 1 if row_num == start_row else 0, len(self.columns)):
+                for col_num in range(start_col + 1 if row_num == start_row else 0, len(self.columns)):   # noqa
                     yield row_num, col_num, str(self.data[row_num].get(self.columns[col_num], ''))
                 if row_num == start_row:
                     start_col = -1  # Reset start_col for subsequent rows
@@ -526,12 +540,12 @@ class GridComponent:
 
     def _adjust_scroll_position(self):
         """Adjusts top_row and left_col to keep the current cell in view."""
-        height, _width = self.stdscr.getmaxyx() # _width is unused
+        height, _width = self.stdscr.getmaxyx()  # _width is unused
         # Adjust vertical scroll
         if self.row_idx < self.top_row:
             self.top_row = self.row_idx
         elif self.row_idx >= self.top_row + height - 3:  # -3 for header and status bar
-            self.top_row = self.row_idx - (height - 4) # -4 to keep one row visible below
+            self.top_row = self.row_idx - (height - 4)  # -4 to keep one row visible below
 
         # Adjust horizontal scroll
         if self.col_idx < self.left_col:
