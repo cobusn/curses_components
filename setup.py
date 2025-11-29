@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 from curses_components  import __version__
 
-with open("requirements.md", "r") as f:
+with open("specifications.md", "r") as f:
     long_description = f.read()
 
 setup(
