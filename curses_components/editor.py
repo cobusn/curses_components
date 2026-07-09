@@ -53,7 +53,7 @@ class EditorPopup:
 
     def __init__(self, stdscr, title="Editor", width=None, height=None,
                  fg_color='green', bg_color='black', border_color='cyan',
-                 bold=False):
+                 bold=False, bold_background=False):
         """Initialise the editor.
 
         Args:
@@ -66,8 +66,10 @@ class EditorPopup:
             fg_color: Foreground text color name (default 'green').
             bg_color: Background color name (default 'black').
             border_color: Border and title color name (default 'cyan').
-            bold: Apply bold attribute to text; most terminals render bold
+            bold: Apply bold to text characters; most terminals render bold
                 green as bright green (default False).
+            bold_background: Apply bold to background fill (empty cells).
+                Defaults to False.
         """
         self.stdscr = stdscr
         self.title = title
@@ -77,6 +79,7 @@ class EditorPopup:
         self.bg_color = bg_color
         self.border_color = border_color
         self.bold = bold
+        self.bold_background = bold_background
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -142,12 +145,12 @@ class EditorPopup:
         bg = resolve_color(self.bg_color, curses.COLOR_BLACK)
         fg = resolve_color(self.fg_color, curses.COLOR_GREEN)
         mc = resolve_color(self.border_color, curses.COLOR_CYAN)
-        bold_flag = curses.A_BOLD if self.bold else 0
         curses.init_pair(10, fg, bg)
         curses.init_pair(11, mc, bg)
         curses.init_pair(12, curses.COLOR_BLACK, curses.COLOR_YELLOW)  # search highlight
         curses.init_pair(13, mc, bg)
-        self._text_attr = curses.color_pair(10) | bold_flag
+        self._text_attr = curses.color_pair(10) | (curses.A_BOLD if self.bold else 0)
+        self._bg_attr = curses.color_pair(10) | (curses.A_BOLD if self.bold_background else 0)
 
     # ------------------------------------------------------------------
     # Main loop
@@ -185,7 +188,7 @@ class EditorPopup:
         status_attr = curses.color_pair(13)
 
         win.erase()
-        win.bkgd(' ', text_attr)
+        win.bkgd(' ', self._bg_attr)
         win.border()
 
         # Repaint border in border color
