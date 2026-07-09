@@ -1,4 +1,4 @@
-__version__ = "25.10.3a"
+__version__ = "26.7.1b"
 
 from curses_components.editor import EditorPopup
 from curses_components.popup import EditorHelpPopup, HelpPopup, ScrollablePopup
