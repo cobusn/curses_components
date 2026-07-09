@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Cobus Nel
 """Vi-like curses editor component.
 
 Provides a modal text editor popup suitable for editing small files such as

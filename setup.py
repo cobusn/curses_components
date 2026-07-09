@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Cobus Nel
 from setuptools import setup, find_packages
 from curses_components  import __version__
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Cobus Nel
 __version__ = "26.7.1b"
 
 from curses_components.editor import EditorPopup

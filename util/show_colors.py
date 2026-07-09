@@ -1,5 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Cobus Nel
 import curses
-from curses_components.curses_component import COLORS
+from curses_components.theme import COLORS
 
 
 def main(stdscr):
@@ -17,8 +19,10 @@ def main(stdscr):
     curses.use_default_colors()
 
     stdscr.addstr(0, 0, "Curses Color Palette", curses.A_BOLD | curses.A_UNDERLINE)
-    stdscr.addstr(2, 0, "{:<10} | {:<10} | {}".format("Name", "ID", "Example"))
-    stdscr.addstr(3, 0, "-" * 40)
+    stdscr.addstr(2, 0, "{:<10} | {:<10} | {:<14} | {}".format(
+        "Name", "ID", "Example", "Bold"))
+    stdscr.addstr(2, 38, "Bold", curses.A_BOLD)
+    stdscr.addstr(3, 0, "-" * 55)
 
     y = 4
     # Start pair number from 1, as 0 is reserved for black/white.
@@ -27,17 +31,15 @@ def main(stdscr):
         # Using -1 for the background uses the terminal's default background.
         curses.init_pair(i, color_id, -1)
 
-        # Prepare the text to display
         name_str = "{:<10}".format(name)
         id_str = "| {:<10}".format(color_id)
-        example_str = "| Sample Text"
+        example_str = "| Sample Text  "
 
-        # Display the text parts
         stdscr.addstr(y, 0, name_str)
         stdscr.addstr(y, 11, id_str)
-
-        # Display the example text in the corresponding color
         stdscr.addstr(y, 24, example_str, curses.color_pair(i))
+        stdscr.addstr(y, 40, "| ")
+        stdscr.addstr(y, 42, "Sample Text", curses.color_pair(i) | curses.A_BOLD)
 
         y += 1
 

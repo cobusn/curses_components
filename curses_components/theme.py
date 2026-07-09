@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Cobus Nel
 """Shared color definitions for curses_components.
 
 COLORS maps human-readable color names to curses color constants.

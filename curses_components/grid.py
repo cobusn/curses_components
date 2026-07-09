@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Cobus Nel
 """A curses-based component for displaying tabular data."""
 
 import csv
