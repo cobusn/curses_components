@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "curses_components"
+dynamic = ["version"]
+description = "A reusable curses component library for terminal UI (TUI) applications."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Cobus Nel" }]
+requires-python = ">=3.13"
+dependencies = ["pyperclip"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "curses_components.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[project.urls]
+Repository = "https://github.com/cobusn/curses_components"

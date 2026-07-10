@@ -1,3 +1,4 @@
+pypi.md
 *.swp
 .ropeproject
 *.log
@@ -5,3 +6,4 @@
 *.csv
 *egg-info*
 build/*
+dist/*
