@@ -9,7 +9,7 @@ description = "A reusable curses component library for terminal UI (TUI) applica
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Cobus Nel" }]
-requires-python = ">=3.13"
+requires-python = ">=3.8"
 dependencies = ["pyperclip"]
 classifiers = [
     "Programming Language :: Python :: 3",

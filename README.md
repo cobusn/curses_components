@@ -112,7 +112,7 @@ EditorPopup also accepts bold=True (bright text) and bold_background=True.
 Dependencies
 ------------
 
-- Python 3.13+
+- Python 3.8+
 - pyperclip (for copy/copyrow commands in GridComponent)
 
 License
