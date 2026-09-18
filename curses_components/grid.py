@@ -11,7 +11,7 @@ import logging
 import re
 import time
 from collections import Counter
-from typing import Protocol, Sequence
+from typing import Optional, Protocol, Sequence
 
 import pyperclip
 
@@ -82,8 +82,10 @@ class GridComponent:
             "quit": self._cmd_quit,
             "sort": self._cmd_sort,
         }
+        self._extension_help = {}
 
-    def register_command(self, name: str, handler: CommandHandler) -> None:
+    def register_command(self, name: str, handler: CommandHandler,
+                         help_text: Optional[str] = None) -> None:
         """Register an extension command receiving ``(grid, args)``."""
         if not isinstance(name, str):
             raise TypeError("command name must be a string")
@@ -97,6 +99,10 @@ class GridComponent:
             return handler(self, args)
 
         self.commands[command_name] = invoke
+        if help_text is None:
+            self._extension_help.pop(command_name, None)
+        else:
+            self._extension_help[command_name] = help_text
 
     def display(self, data, columns=None, max_rows=10000):
         """
@@ -189,7 +195,8 @@ class GridComponent:
         self.error_message = message
         self.error_message_expiry = time.time() + delay
 
-    def show_popup(self, title, *, rows=None, lines=None, key_col_width=20):
+    def show_popup(self, title, *, rows=None, lines=None, key_col_width=20,
+                   width=None, height=None):
         """Display a scrollable popup with text lines or two-column rows."""
         if (rows is None) == (lines is None):
             raise ValueError("provide exactly one of rows or lines")
@@ -199,9 +206,16 @@ class GridComponent:
             "fg_color": self.fg_color,
             "bg_color": self.bg_color,
             "border_color": self.border_color,
+            "width": width,
+            "height": height,
         }
         if lines is not None:
-            TextPopup(self.stdscr, lines, **popup_kwargs).display()
+            TextPopup(
+                self.stdscr,
+                lines,
+                key_col_width=key_col_width,
+                **popup_kwargs,
+            ).display()
         else:
             ScrollablePopup(
                 self.stdscr,
@@ -442,14 +456,24 @@ class GridComponent:
                 key=lambda item: (-item[1], str(item[0])),
             )
         )
-        key_col_width = min(
-            40,
-            max(24, max((len(str(value)) for value in counts), default=0) + 3),
+        key_col_width = max(
+            24,
+            max(len(left) for left, _ in rows) + 2,
         )
+        title = f"{column} ({len(counts)} unique)"
+        popup_width = max(
+            8,
+            len(title) + 2,
+            len("Press 'q' to close...") + 4,
+            key_col_width + max(len(right) for _, right in rows) + 2,
+        )
+        popup_height = min(25, max(5, len(rows) + 4))
         self.show_popup(
-            f"{column} ({len(counts)} unique)",
+            title,
             rows=rows,
             key_col_width=key_col_width,
+            width=popup_width,
+            height=popup_height,
         )
 
     def _cmd_export(self, _cmds):
@@ -469,10 +493,21 @@ class GridComponent:
 
     def _cmd_help(self, _cmds):
         """Handles the 'help' command, displaying the help screen."""
+        help_rows = HelpPopup(
+            self.stdscr,
+            extension_help=self._extension_help,
+        ).rows
+        help_key_col_width = max(
+            HelpPopup.key_col_width,
+            max(
+                (len(str(left)) for left, right in help_rows if not right),
+                default=0,
+            ) + 2,
+        )
         self.show_popup(
             HelpPopup.title,
-            rows=HelpPopup(self.stdscr).rows,
-            key_col_width=HelpPopup.key_col_width,
+            rows=help_rows,
+            key_col_width=help_key_col_width,
         )
 
     def _cmd_dollar(self, _cmds):
@@ -609,11 +644,11 @@ class GridComponent:
 
         if key in (curses.KEY_ENTER, 10, 13):
             self.input_mode = False
-            cmds = self.input_buffer.lower().split()
+            cmds = self.input_buffer.split()
             if not cmds:
                 self.input_buffer = ""
                 return True
-            cmd = cmds[0]
+            cmd = cmds[0].lower()
             if cmd in self.commands:
                 self.commands[cmd](cmds[1:])
             elif re.match(r'^[0-9]+$', cmd):

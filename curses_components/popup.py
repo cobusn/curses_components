@@ -3,6 +3,7 @@
 """Reusable curses popup components."""
 
 import curses
+import re
 from collections import Counter
 
 from curses_components.theme import resolve_color
@@ -26,7 +27,8 @@ class ScrollablePopup:
     key_col_width = 20  # characters reserved for the left column
 
     def __init__(self, stdscr, title=None, rows=None, key_col_width=None,
-                 fg_color=None, bg_color=None, border_color=None):
+                 fg_color=None, bg_color=None, border_color=None,
+                 width=None, height=None):
         self.stdscr = stdscr
         if title is not None:
             self.title = title
@@ -36,7 +38,15 @@ class ScrollablePopup:
         self.fg_color = fg_color
         self.bg_color = bg_color
         self.border_color = border_color
+        self.width = self._validate_dimension(width, "width")
+        self.height = self._validate_dimension(height, "height")
         self.scroll_pos = 0
+
+    @staticmethod
+    def _validate_dimension(value, name):
+        if value is not None and value <= 0:
+            raise ValueError(f"{name} must be positive")
+        return value
 
     def _init_colors(self):
         """Initialize color pairs used by the popup."""
@@ -54,8 +64,14 @@ class ScrollablePopup:
     def display(self):
         self._init_colors()
         height, width = self.stdscr.getmaxyx()
-        win_height = min(25, height - 2)
-        win_width = min(80, width - 2)
+        available_height = max(1, height - 2)
+        available_width = max(1, width - 2)
+        win_height = min(self.height or 25, available_height)
+        win_width = min(self.width or 80, available_width)
+        if available_height >= 5:
+            win_height = max(5, win_height)
+        if available_width >= 8:
+            win_width = max(8, win_width)
         pos_y = max(0, (height - win_height) // 2)
         pos_x = max(0, (width - win_width) // 2)
         win = curses.newwin(win_height, win_width, pos_y, pos_x)
@@ -67,14 +83,12 @@ class ScrollablePopup:
         while True:
             win.attrset(curses.color_pair(6))
             win.border()
-            title = self.title
-            title_x = max(0, (win_width - len(title)) // 2)
-            win.addstr(
-                0,
-                title_x,
-                title[:max(0, win_width - title_x - 1)],
-                curses.color_pair(6) | curses.A_REVERSE,
-            )
+            title_width = max(0, win_width - 2)
+            title = str(self.title)[:title_width]
+            title_x = max(1, 1 + (title_width - len(title)) // 2)
+            if title:
+                win.addstr(0, title_x, title,
+                           curses.color_pair(6) | curses.A_REVERSE)
 
             for i in range(1, win_height - 1):
                 win.addstr(i, 1, " " * (win_width - 2), curses.color_pair(5))
@@ -83,30 +97,31 @@ class ScrollablePopup:
             for left, right in content[self.scroll_pos:]:
                 if text_y >= win_height - 2:
                     break
-                left_width = max(0, self.key_col_width - 3)
-                right_width = max(0, win_width - self.key_col_width - 2)
-                win.addstr(
-                    text_y,
-                    2,
-                    left[:left_width],
-                    curses.color_pair(5) | curses.A_BOLD,
-                )
-                if right:
+                content_right = win_width - 2
+                right_x = min(max(2, self.key_col_width), content_right)
+                left_width = max(0, right_x - 2)
+                right_width = max(0, content_right - right_x)
+                if left_width:
                     win.addstr(
                         text_y,
-                        self.key_col_width,
+                        2,
+                        left[:left_width],
+                        curses.color_pair(5) | curses.A_BOLD,
+                    )
+                if right and right_width:
+                    win.addstr(
+                        text_y,
+                        right_x,
                         right[:right_width],
                         curses.color_pair(5),
                     )
                 text_y += 1
 
             footer = "Press 'q' to close..."
-            win.addstr(
-                win_height - 2,
-                2,
-                footer[:max(0, win_width - 4)],
-                curses.color_pair(5),
-            )
+            footer_width = max(0, win_width - 4)
+            if footer_width:
+                win.addstr(win_height - 2, 2, footer[:footer_width],
+                           curses.color_pair(5))
             win.noutrefresh()
             curses.doupdate()
 
@@ -122,32 +137,32 @@ class ScrollablePopup:
 class TextPopup(ScrollablePopup):
     """Popup displaying one scrollable line of text per row."""
 
-    def __init__(self, stdscr, lines, **kwargs):
-        super().__init__(stdscr, **kwargs)
+    def __init__(self, stdscr, lines, width=None, height=None, **kwargs):
+        super().__init__(stdscr, width=width, height=height, **kwargs)
         self.lines = [str(line) for line in lines]
 
     @property
     def rows(self):
         return [(line, "") for line in self.lines]
 
-    def display(self):
-        original_key_col_width = self.key_col_width
-        screen_width = self.stdscr.getmaxyx()[1]
-        self.key_col_width = min(80, max(1, screen_width - 2))
-        try:
-            super().display()
-        finally:
-            self.key_col_width = original_key_col_width
-
-
 class HelpPopup(ScrollablePopup):
     """Help popup for GridComponent."""
 
     title = "Help"
 
+    def __init__(self, stdscr, extension_help=None, **kwargs):
+        super().__init__(stdscr, **kwargs)
+        self.extension_help = extension_help or {}
+
+    @staticmethod
+    def _extension_help_row(help_text):
+        """Split a formatted extension help line into popup columns."""
+        left, *right = re.split(r"\s{2,}", str(help_text).strip(), maxsplit=1)
+        return left, right[0] if right else ""
+
     @property
     def rows(self):
-        return [
+        rows = [
             ("Navigation", ""),
             ("j, k, h, l", "Move down, up, left, right"),
             ("Arrow keys", "Move down, up, left, right"),
@@ -197,6 +212,16 @@ class HelpPopup(ScrollablePopup):
             ("Info Bar (top row)", ""),
             ("numeric column", "Shows min/max/avg/count for column"),
         ]
+        if self.extension_help:
+            rows.extend([
+                ("", ""),
+                ("Extension Commands", ""),
+            ])
+            rows.extend(
+                self._extension_help_row(self.extension_help[name])
+                for name in sorted(self.extension_help)
+            )
+        return rows
 
 
 class ValueCountPopup(ScrollablePopup):

@@ -7,3 +7,5 @@ pypi.md
 *egg-info*
 build/*
 dist/*
+_specs/*
+_resume/*
