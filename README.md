@@ -80,7 +80,7 @@ GridComponent key bindings
 Navigation:   j/k/h/l or arrow keys, Home/End, Page Up/Down, ^/$
 Search:       / (substring), r/<pattern> (regex), n/N (next/previous)
 Input mode:   : (enter), q (quit), sort, filter, col, freeze, copy,
-              copyrow, export <file>
+              copyrow, count, export <file>
 Sorting:      sort col1 col2!   (! suffix = descending)
 Filtering:    filter <val>      (current column, wildcards supported)
               filter reset

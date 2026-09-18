@@ -12,7 +12,7 @@ import re
 import time
 import pyperclip
 
-from curses_components.popup import HelpPopup
+from curses_components.popup import HelpPopup, ValueCountPopup
 from curses_components.theme import resolve_color
 
 
@@ -64,6 +64,7 @@ class GridComponent:
             "col": self._cmd_col,
             "copy": self._cmd_copy,
             "copyrow": self._cmd_copyrow,
+            "count": self._cmd_count,
             "export": self._cmd_export,
             "filter": self._cmd_filter,
             "freeze": self._cmd_freeze,
@@ -372,6 +373,29 @@ class GridComponent:
             pyperclip.copy(json.dumps(row, ensure_ascii=False))
             self.show_error("Row copied as JSON", delay=0.8)
 
+    def _cmd_count(self, _cmds):
+        """Display counts of distinct raw values in the current column."""
+        if _cmds:
+            self.show_error("Usage: count")
+            return
+        if not self.data or not self.columns:
+            self.show_error("No data to count")
+            return
+
+        column = self.columns[self.col_idx]
+        values = [row.get(column, '') for row in self.data]
+        try:
+            ValueCountPopup(
+                self.stdscr,
+                column,
+                values,
+                fg_color=self.fg_color,
+                bg_color=self.bg_color,
+                border_color=self.border_color,
+            ).display()
+        except TypeError:
+            self.show_error("Cannot count unhashable values")
+
     def _cmd_export(self, _cmds):
         """Handles the 'export' command, writing current data to a CSV file."""
         if not _cmds:
@@ -389,7 +413,12 @@ class GridComponent:
 
     def _cmd_help(self, _cmds):
         """Handles the 'help' command, displaying the help screen."""
-        help_screen = HelpPopup(self.stdscr)
+        help_screen = HelpPopup(
+            self.stdscr,
+            fg_color=self.fg_color,
+            bg_color=self.bg_color,
+            border_color=self.border_color,
+        )
         help_screen.display()
 
     def _cmd_dollar(self, _cmds):
@@ -662,7 +691,12 @@ class GridComponent:
                 else:
                     self.show_error("No mark set")
             elif key == ord('?'):
-                help_screen = HelpPopup(self.stdscr)
+                help_screen = HelpPopup(
+                    self.stdscr,
+                    fg_color=self.fg_color,
+                    bg_color=self.bg_color,
+                    border_color=self.border_color,
+                )
                 help_screen.display()
 
     def _get_visible_cols(self):

@@ -2,6 +2,7 @@ Todo list
 =========
 
 # Grid Component
+- [ ] Refactor so that it can be called in a popup (do not init curses)
 - [ ] Consistent alignment per column
 - [ ] :hide command to hide column
 - [ ] :count command to count distinct values in column

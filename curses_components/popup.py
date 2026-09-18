@@ -3,6 +3,9 @@
 """Reusable curses popup components."""
 
 import curses
+from collections import Counter
+
+from curses_components.theme import resolve_color
 
 
 class ScrollablePopup:
@@ -22,9 +25,20 @@ class ScrollablePopup:
     title = ""
     key_col_width = 20  # characters reserved for the left column
 
-    def __init__(self, stdscr):
+    def __init__(self, stdscr, fg_color=None, bg_color=None, border_color=None):
         self.stdscr = stdscr
+        self.fg_color = fg_color
+        self.bg_color = bg_color
+        self.border_color = border_color
         self.scroll_pos = 0
+
+    def _init_colors(self):
+        """Initialize color pairs used by the popup."""
+        bg = resolve_color(self.bg_color, -1)
+        fg = resolve_color(self.fg_color, -1)
+        border = resolve_color(self.border_color, -1)
+        curses.init_pair(5, fg, bg)
+        curses.init_pair(6, border, bg)
 
     @property
     def rows(self):
@@ -32,6 +46,7 @@ class ScrollablePopup:
         return []
 
     def display(self):
+        self._init_colors()
         height, width = self.stdscr.getmaxyx()
         win_height = min(25, height - 2)
         win_width = min(80, width - 2)
@@ -44,23 +59,48 @@ class ScrollablePopup:
         max_scroll = max(0, len(content) - (win_height - 4))
 
         while True:
+            win.attrset(curses.color_pair(6))
             win.border()
             title = self.title
-            win.addstr(0, max(0, (win_width - len(title)) // 2), title, curses.A_REVERSE)
+            title_x = max(0, (win_width - len(title)) // 2)
+            win.addstr(
+                0,
+                title_x,
+                title[:max(0, win_width - title_x - 1)],
+                curses.color_pair(6) | curses.A_REVERSE,
+            )
 
             for i in range(1, win_height - 1):
-                win.addstr(i, 1, " " * (win_width - 2))
+                win.addstr(i, 1, " " * (win_width - 2), curses.color_pair(5))
 
             text_y = 2
             for left, right in content[self.scroll_pos:]:
                 if text_y >= win_height - 2:
                     break
-                win.addstr(text_y, 2, left, curses.A_BOLD)
+                left_width = max(0, self.key_col_width - 3)
+                right_width = max(0, win_width - self.key_col_width - 2)
+                win.addstr(
+                    text_y,
+                    2,
+                    left[:left_width],
+                    curses.color_pair(5) | curses.A_BOLD,
+                )
                 if right:
-                    win.addstr(text_y, self.key_col_width, right)
+                    win.addstr(
+                        text_y,
+                        self.key_col_width,
+                        right[:right_width],
+                        curses.color_pair(5),
+                    )
                 text_y += 1
 
-            win.addstr(win_height - 2, 2, "Press 'q' to close...")
+            footer = "Press 'q' to close..."
+            win.addstr(
+                win_height - 2,
+                2,
+                footer[:max(0, win_width - 4)],
+                curses.color_pair(5),
+            )
             win.noutrefresh()
             curses.doupdate()
 
@@ -106,6 +146,7 @@ class HelpPopup(ScrollablePopup):
             ("sort col1 col2!", "col1 asc, col2 desc (! = descending)"),
             ("copy", "Copy current cell value"),
             ("copyrow", "Copy current row as JSON"),
+            ("count", "Count distinct values in current column"),
             ("export <file>", "Export current data to CSV file"),
             ("ESC", "Exit input mode"),
             ("", ""),
@@ -129,6 +170,40 @@ class HelpPopup(ScrollablePopup):
             ("Info Bar (top row)", ""),
             ("numeric column", "Shows min/max/avg/count for column"),
         ]
+
+
+class ValueCountPopup(ScrollablePopup):
+    """Popup displaying the frequency of each value in a grid column."""
+
+    title = "Value Counts"
+
+    def __init__(self, stdscr, column, values, **colors):
+        super().__init__(stdscr, **colors)
+        self.column = column
+        self.counts = Counter(values)
+        self.key_col_width = min(
+            40,
+            max(
+                24,
+                max((len(str(value)) for value in self.counts), default=0) + 3,
+            ),
+        )
+
+    @property
+    def rows(self):
+        rows = [("Value", "Count"), ("", "")]
+        rows.extend(
+            (str(value), str(count))
+            for value, count in sorted(
+                self.counts.items(),
+                key=lambda item: (-item[1], str(item[0])),
+            )
+        )
+        return rows
+
+    def display(self):
+        self.title = f"{self.column} ({len(self.counts)} unique)"
+        super().display()
 
 
 class EditorHelpPopup(ScrollablePopup):

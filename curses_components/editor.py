@@ -612,7 +612,12 @@ class EditorPopup:
             return None
 
         if verb == 'help':
-            EditorHelpPopup(self.stdscr).display()
+            EditorHelpPopup(
+                self.stdscr,
+                fg_color=self.fg_color,
+                bg_color=self.bg_color,
+                border_color=self.border_color,
+            ).display()
             return None
 
         self._status_msg = f'unknown command: {verb}'
