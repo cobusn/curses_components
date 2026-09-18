@@ -3,5 +3,6 @@
 __version__ = "26.9.1"
 
 from curses_components.editor import EditorPopup
+from curses_components.grid import CommandHandler, GridComponent
 from curses_components.popup import EditorHelpPopup, HelpPopup, ScrollablePopup
 from curses_components.theme import COLORS, resolve_color

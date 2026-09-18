@@ -84,6 +84,16 @@ Grid extensions can display reusable popups through `show_popup`:
 
 The popup inherits the grid's configured colors.
 
+Commands can be added with a handler that receives the grid and parsed
+arguments:
+
+    def show_current_column(grid, args):
+        column = grid.columns[grid.col_idx]
+        grid.show_popup(column, lines=[str(row.get(column, ''))
+                                       for row in grid.data])
+
+    grid.register_command('values', show_current_column)
+
 Navigation:   j/k/h/l or arrow keys, Home/End, Page Up/Down, ^/$
 Search:       / (substring), r/<pattern> (regex), n/N (next/previous)
 Input mode:   : (enter), q (quit), sort, filter, col, freeze, copy,

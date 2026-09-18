@@ -11,18 +11,25 @@ import logging
 import re
 import time
 from collections import Counter
+from typing import Protocol, Sequence
 
 import pyperclip
 
 from curses_components.popup import HelpPopup, ScrollablePopup, TextPopup
 from curses_components.theme import resolve_color
 
-
 logging.basicConfig(filename='help_debug.log', level=logging.DEBUG)
 
 
 class QuitApplication(Exception):
     """Custom exception to signal application exit."""
+
+
+class CommandHandler(Protocol):
+    """Public signature for commands registered by grid extensions."""
+
+    def __call__(self, grid: "GridComponent", args: Sequence[str]) -> None:
+        """Handle a command for the grid and its parsed arguments."""
 
 
 
@@ -75,6 +82,21 @@ class GridComponent:
             "quit": self._cmd_quit,
             "sort": self._cmd_sort,
         }
+
+    def register_command(self, name: str, handler: CommandHandler) -> None:
+        """Register an extension command receiving ``(grid, args)``."""
+        if not isinstance(name, str):
+            raise TypeError("command name must be a string")
+        command_name = name.strip().lower()
+        if not command_name or any(char.isspace() for char in command_name):
+            raise ValueError("command name must be a non-empty single token")
+        if not callable(handler):
+            raise TypeError("command handler must be callable")
+
+        def invoke(args):
+            return handler(self, args)
+
+        self.commands[command_name] = invoke
 
     def display(self, data, columns=None, max_rows=10000):
         """
