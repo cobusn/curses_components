@@ -77,6 +77,13 @@ See examples/ for runnable demos:
 GridComponent key bindings
 --------------------------
 
+Grid extensions can display reusable popups through `show_popup`:
+
+    grid.show_popup('Messages', lines=['first line', 'second line'])
+    grid.show_popup('Results', rows=[('Name', 'Alice'), ('State', 'Active')])
+
+The popup inherits the grid's configured colors.
+
 Navigation:   j/k/h/l or arrow keys, Home/End, Page Up/Down, ^/$
 Search:       / (substring), r/<pattern> (regex), n/N (next/previous)
 Input mode:   : (enter), q (quit), sort, filter, col, freeze, copy,

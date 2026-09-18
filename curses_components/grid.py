@@ -10,9 +10,11 @@ import json
 import logging
 import re
 import time
+from collections import Counter
+
 import pyperclip
 
-from curses_components.popup import HelpPopup, ValueCountPopup
+from curses_components.popup import HelpPopup, ScrollablePopup, TextPopup
 from curses_components.theme import resolve_color
 
 
@@ -164,6 +166,27 @@ class GridComponent:
         """Displays an error message in the status bar."""
         self.error_message = message
         self.error_message_expiry = time.time() + delay
+
+    def show_popup(self, title, *, rows=None, lines=None, key_col_width=20):
+        """Display a scrollable popup with text lines or two-column rows."""
+        if (rows is None) == (lines is None):
+            raise ValueError("provide exactly one of rows or lines")
+
+        popup_kwargs = {
+            "title": title,
+            "fg_color": self.fg_color,
+            "bg_color": self.bg_color,
+            "border_color": self.border_color,
+        }
+        if lines is not None:
+            TextPopup(self.stdscr, lines, **popup_kwargs).display()
+        else:
+            ScrollablePopup(
+                self.stdscr,
+                rows=rows,
+                key_col_width=key_col_width,
+                **popup_kwargs,
+            ).display()
 
     def _get_col_stats(self, col):
         """Returns (min, max, avg, count) for a numeric column over current data, or None."""
@@ -385,16 +408,27 @@ class GridComponent:
         column = self.columns[self.col_idx]
         values = [row.get(column, '') for row in self.data]
         try:
-            ValueCountPopup(
-                self.stdscr,
-                column,
-                values,
-                fg_color=self.fg_color,
-                bg_color=self.bg_color,
-                border_color=self.border_color,
-            ).display()
+            counts = Counter(values)
         except TypeError:
             self.show_error("Cannot count unhashable values")
+            return
+        rows = [("Value", "Count"), ("", "")]
+        rows.extend(
+            (str(value), str(count))
+            for value, count in sorted(
+                counts.items(),
+                key=lambda item: (-item[1], str(item[0])),
+            )
+        )
+        key_col_width = min(
+            40,
+            max(24, max((len(str(value)) for value in counts), default=0) + 3),
+        )
+        self.show_popup(
+            f"{column} ({len(counts)} unique)",
+            rows=rows,
+            key_col_width=key_col_width,
+        )
 
     def _cmd_export(self, _cmds):
         """Handles the 'export' command, writing current data to a CSV file."""
@@ -413,13 +447,11 @@ class GridComponent:
 
     def _cmd_help(self, _cmds):
         """Handles the 'help' command, displaying the help screen."""
-        help_screen = HelpPopup(
-            self.stdscr,
-            fg_color=self.fg_color,
-            bg_color=self.bg_color,
-            border_color=self.border_color,
+        self.show_popup(
+            HelpPopup.title,
+            rows=HelpPopup(self.stdscr).rows,
+            key_col_width=HelpPopup.key_col_width,
         )
-        help_screen.display()
 
     def _cmd_dollar(self, _cmds):
         """Handles the '$' command, moving to the last row."""
@@ -691,13 +723,7 @@ class GridComponent:
                 else:
                     self.show_error("No mark set")
             elif key == ord('?'):
-                help_screen = HelpPopup(
-                    self.stdscr,
-                    fg_color=self.fg_color,
-                    bg_color=self.bg_color,
-                    border_color=self.border_color,
-                )
-                help_screen.display()
+                self._cmd_help([])
 
     def _get_visible_cols(self):
         """Returns a list of scrollable column names currently visible on screen."""

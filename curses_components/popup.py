@@ -25,8 +25,14 @@ class ScrollablePopup:
     title = ""
     key_col_width = 20  # characters reserved for the left column
 
-    def __init__(self, stdscr, fg_color=None, bg_color=None, border_color=None):
+    def __init__(self, stdscr, title=None, rows=None, key_col_width=None,
+                 fg_color=None, bg_color=None, border_color=None):
         self.stdscr = stdscr
+        if title is not None:
+            self.title = title
+        self._rows = rows
+        if key_col_width is not None:
+            self.key_col_width = key_col_width
         self.fg_color = fg_color
         self.bg_color = bg_color
         self.border_color = border_color
@@ -43,7 +49,7 @@ class ScrollablePopup:
     @property
     def rows(self):
         """Return a list of (left, right) string tuples to display."""
-        return []
+        return self._rows or []
 
     def display(self):
         self._init_colors()
@@ -111,6 +117,27 @@ class ScrollablePopup:
                 self.scroll_pos = max(0, self.scroll_pos - 1)
             elif key in (curses.KEY_DOWN, ord('j')):
                 self.scroll_pos = min(max_scroll, self.scroll_pos + 1)
+
+
+class TextPopup(ScrollablePopup):
+    """Popup displaying one scrollable line of text per row."""
+
+    def __init__(self, stdscr, lines, **kwargs):
+        super().__init__(stdscr, **kwargs)
+        self.lines = [str(line) for line in lines]
+
+    @property
+    def rows(self):
+        return [(line, "") for line in self.lines]
+
+    def display(self):
+        original_key_col_width = self.key_col_width
+        screen_width = self.stdscr.getmaxyx()[1]
+        self.key_col_width = min(80, max(1, screen_width - 2))
+        try:
+            super().display()
+        finally:
+            self.key_col_width = original_key_col_width
 
 
 class HelpPopup(ScrollablePopup):
