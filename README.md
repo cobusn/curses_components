@@ -99,7 +99,10 @@ Search:       / (substring), r/<pattern> (regex), n/N (next/previous)
 Input mode:   : (enter), q (quit), sort, filter, col, freeze, copy,
               copyrow, count, export <file>
 Sorting:      sort col1 col2!   (! suffix = descending)
-Filtering:    filter <val>      (current column, wildcards supported)
+Filtering:    filter <val>      (replace current-column filter; case-sensitive wildcards supported)
+              filter <col> <val>
+              filter or [<col>] <val>  (OR within a column; columns combine with AND)
+              filter remove <col> [val]
               filter reset
 Marks:        m (set), ' (jump)
 Other:        # (toggle row numbers), ? (help), Ctrl+Left/Right (resize column)

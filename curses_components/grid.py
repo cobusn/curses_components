@@ -64,7 +64,7 @@ class GridComponent:
         self.max_rows = 0  # Initialized in _display
         self.col_widths = {}  # Initialized in _prepare_data
         self._all_data = []  # Initialized in _prepare_data
-        self.active_filter = None  # (column, value) tuple or None
+        self.active_filters = {}  # {column: [value, ...]}; values are ORed per column
         self.frozen_cols = 0
         self.mark_row = None  # row index of the marked row
         self.show_row_numbers = True
@@ -345,9 +345,11 @@ class GridComponent:
                 elif self.search_mode:
                     status_bar_left = "/" + self.search_buffer
                 self.stdscr.addstr(max_height - 1, 0, status_bar_left)
-                if self.active_filter:
-                    col, val = self.active_filter
-                    filter_text = f" [{col}={val}] "
+                if self.active_filters:
+                    filter_text = " [" + ", ".join(
+                        f"{col}={'|'.join(values)}"
+                        for col, values in self.active_filters.items()
+                    ) + "] "
                     if max_width > len(filter_text) + 1:
                         self.stdscr.addstr(
                             max_height - 1,
@@ -599,38 +601,81 @@ class GridComponent:
 
         Usage:
             filter reset         — clear active filter
-            filter <col> <val>   — show rows where col contains val (case-insensitive)
-            filter <val>         — search across all columns
+            filter <col> <val>   — replace the exact-match filter for a column
+            filter <val>         — replace the exact-match filter for the current column
+            filter or [<col>] <val> — add an alternative exact-match value
+            filter remove <col> [<val>] — remove a column filter or one alternative
         """
         if not _cmds or _cmds[0] == 'reset':
+            self.active_filters = {}
             self.data = self._all_data
-            self.active_filter = None
             self.row_idx = 0
             self.top_row = 0
             self.mark_row = None
             return
 
-        if len(_cmds) >= 2:
-            col_fragment, value = _cmds[0], ' '.join(_cmds[1:])
-            # Match column name case-insensitively, partial prefix OK
-            matches = [c for c in self.columns if c.lower().startswith(col_fragment)]
+        if _cmds[0] == 'remove':
+            if len(_cmds) < 2:
+                self.show_error("Usage: filter remove <column> [value]")
+                return
+            col_fragment = _cmds[1]
+            matches = [c for c in self.columns
+                       if c.lower().startswith(col_fragment.lower())]
             if not matches:
-                self.show_error(f"No column matches: {_cmds[0]}")
+                self.show_error(f"No column matches: {col_fragment}")
                 return
             col = matches[0]
+            if len(_cmds) == 2:
+                self.active_filters.pop(col, None)
+            else:
+                value = ' '.join(_cmds[2:])
+                values = self.active_filters.get(col, [])
+                self.active_filters[col] = [v for v in values if v != value]
+                if not self.active_filters[col]:
+                    self.active_filters.pop(col)
         else:
-            if not self.columns:
+            add_alternative = _cmds[0] == 'or'
+            filter_args = _cmds[1:] if add_alternative else _cmds
+            if not filter_args:
+                self.show_error("Usage: filter or [column] <value>")
                 return
-            col = self.columns[self.col_idx]
-            value = _cmds[0]
 
-        if any(c in value for c in ('*', '?', '[')):
-            self.data = [r for r in self._all_data
-                         if fnmatch.fnmatch(str(r.get(col, '')).lower(), value)]
-        else:
-            self.data = [r for r in self._all_data
-                         if str(r.get(col, '')).lower() == value]
-        self.active_filter = (col, value)
+            if len(filter_args) >= 2:
+                col_fragment, value = filter_args[0], ' '.join(filter_args[1:])
+                # Match column name case-insensitively, partial prefix OK
+                matches = [c for c in self.columns
+                           if c.lower().startswith(col_fragment.lower())]
+                if not matches:
+                    self.show_error(f"No column matches: {col_fragment}")
+                    return
+                col = matches[0]
+            else:
+                if not self.columns:
+                    return
+                col = self.columns[self.col_idx]
+                value = filter_args[0]
+
+            if add_alternative:
+                values = self.active_filters.setdefault(col, [])
+                if value not in values:
+                    values.append(value)
+            else:
+                self.active_filters[col] = [value]
+
+        def matches_filter(row, col, values):
+            cell_value = str(row.get(col, ''))
+            return any(
+                fnmatch.fnmatchcase(cell_value, value)
+                if any(char in value for char in ('*', '?', '['))
+                else cell_value == value
+                for value in values
+            )
+
+        self.data = [
+            row for row in self._all_data
+            if all(matches_filter(row, col, values)
+                   for col, values in self.active_filters.items())
+        ]
         self.row_idx = 0
         self.top_row = 0
         self.mark_row = None
