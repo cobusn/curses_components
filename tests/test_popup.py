@@ -195,9 +195,9 @@ def test_help_lists_format_commands_and_registered_formatters():
     rows = HelpPopup(object(), formatters=grid._formatters).rows
 
     assert ("format all <name>", "Set the global formatter") in rows
-    assert ("commas", "Thousands separators; default formatter") in rows
+    assert ("commas", "Thousands separators") in rows
     assert ("fixed", "Thousands separators with float_fmt precision") in rows
-    assert ("off", "Display raw values") in rows
+    assert ("off", "Display raw values; default formatter") in rows
     assert ("percent", "Custom formatter") in rows
 
 

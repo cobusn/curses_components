@@ -94,8 +94,8 @@ arguments:
 
     grid.register_command('values', show_current_column)
 
-Number formatting uses thousands separators by default. The global formatter
-and individual column formatters can be changed from Python or command mode:
+Raw values are displayed by default. The global formatter and individual
+column formatters can be changed from Python or command mode:
 
     grid.set_default_formatter('commas')
     grid.set_column_formatter('amount', 'off')

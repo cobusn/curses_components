@@ -4,7 +4,7 @@ from curses_components.grid import GridComponent
 
 
 def make_grid():
-    grid = GridComponent()
+    grid = GridComponent(default_formatter="commas")
     grid.data = [
         {"amount": 1000000, "ratio": 0.125, "code": "1000"},
         {"amount": 2500, "ratio": 0.5, "code": "2500"},
@@ -23,9 +23,16 @@ def test_default_formatter_uses_thousands_separators():
     assert grid._format_cell_value("code", "1000") == "1000"
 
 
+def test_default_formatter_is_off():
+    grid = GridComponent()
+
+    assert grid.default_formatter == "off"
+    assert grid._format_cell_value("amount", 1000) == "1000"
+
+
 def test_default_formatter_handles_excel_style_integer():
     numpy = pytest.importorskip("numpy")
-    grid = GridComponent()
+    grid = GridComponent(default_formatter="commas")
 
     assert grid._format_cell_value("amount", numpy.int64(1000)) == "1,000"
 

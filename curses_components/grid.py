@@ -45,7 +45,7 @@ class GridComponent:
 
     def __init__(self, fg_color='green', bg_color='black', border_color='cyan',
                  max_col_width=20, float_fmt='.2f',
-                 default_formatter='commas'):
+                 default_formatter='off'):
         self.fg_color = fg_color
         self.bg_color = bg_color
         self.border_color = border_color

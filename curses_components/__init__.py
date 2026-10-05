@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Cobus Nel
-__version__ = "26.10.1"
+__version__ = "26.10.2"
 
 from curses_components.editor import EditorPopup
 from curses_components.grid import CommandHandler, GridComponent
