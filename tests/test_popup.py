@@ -1,3 +1,5 @@
+import curses
+
 import pytest
 
 from curses_components.grid import GridComponent
@@ -184,6 +186,65 @@ def test_registering_without_help_removes_extension_help():
     rows = HelpPopup(object(), extension_help=grid._extension_help).rows
     assert ("Extension Commands", "") not in rows
     assert ("summary help", "") not in rows
+
+
+def test_help_lists_format_commands_and_registered_formatters():
+    grid = GridComponent()
+    grid.register_formatter("percent", lambda value: f"{value:.0%}")
+
+    rows = HelpPopup(object(), formatters=grid._formatters).rows
+
+    assert ("format all <name>", "Set the global formatter") in rows
+    assert ("commas", "Thousands separators; default formatter") in rows
+    assert ("fixed", "Thousands separators with float_fmt precision") in rows
+    assert ("off", "Display raw values") in rows
+    assert ("percent", "Custom formatter") in rows
+
+
+def test_active_column_header_is_inverted(monkeypatch):
+    class Screen:
+        def __init__(self):
+            self.writes = []
+
+        def addstr(self, y, x, text, attrs=0):
+            self.writes.append((y, x, text, attrs))
+
+    screen = Screen()
+    monkeypatch.setattr("curses_components.grid.curses.color_pair", lambda value: value)
+    grid = GridComponent()
+    grid.stdscr = screen
+    grid.columns = ["First", "Second"]
+    grid.col_widths = {"First": 5, "Second": 6}
+    grid.col_idx = 1
+
+    grid._draw_header(row_num_width=0, max_width=40)
+
+    assert screen.writes[0][3] == 3 | curses.A_REVERSE
+    assert screen.writes[1][3] == 3
+
+
+def test_active_row_header_is_inverted(monkeypatch):
+    class Screen:
+        def __init__(self):
+            self.writes = []
+
+        def addstr(self, y, x, text, attrs=0):
+            self.writes.append((y, x, text, attrs))
+
+    screen = Screen()
+    monkeypatch.setattr("curses_components.grid.curses.color_pair", lambda value: value)
+    grid = GridComponent()
+    grid.stdscr = screen
+    grid.columns = ["Value"]
+    grid.col_widths = {"Value": 5}
+    grid.data = [{"Value": "one"}, {"Value": "two"}]
+    grid.col_is_numeric = {"Value": False}
+    grid.row_idx = 1
+
+    grid._draw_data(max_height=10, row_num_width=4, max_width=40)
+
+    assert screen.writes[0][3] == 3 | curses.A_REVERSE
+    assert screen.writes[3][3] == 3
 
 
 def test_help_popup_has_no_extension_heading_by_default():

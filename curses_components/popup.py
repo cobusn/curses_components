@@ -150,9 +150,11 @@ class HelpPopup(ScrollablePopup):
 
     title = "Help"
 
-    def __init__(self, stdscr, extension_help=None, **kwargs):
+    def __init__(self, stdscr, extension_help=None, formatters=None,
+                 **kwargs):
         super().__init__(stdscr, **kwargs)
         self.extension_help = extension_help or {}
+        self.formatters = tuple(formatters or ())
 
     @staticmethod
     def _extension_help_row(help_text):
@@ -190,8 +192,18 @@ class HelpPopup(ScrollablePopup):
             ("copyrow", "Copy current row as JSON"),
             ("count", "Count distinct values in current column"),
             ("export <file>", "Export current data to CSV file"),
+            ("format", "Show formatter for current column"),
+            ("format <name>", "Set formatter for current column"),
+            ("format all <name>", "Set the global formatter"),
+            ("format <col> <name>", "Set formatter for named column"),
+            ("format off", "Disable formatting for current column"),
+            ("format inherit", "Use the global formatter for current column"),
             ("ESC", "Exit input mode"),
             ("", ""),
+            ("Available Formatters", ""),
+            ("commas", "Thousands separators; default formatter"),
+            ("fixed", "Thousands separators with float_fmt precision"),
+            ("off", "Display raw values"),
             ("Row Filtering", ""),
             ("filter <val>", "Replace exact-match filter on current column"),
             ("filter <col> <val>", "Replace exact-match filter on named column"),
@@ -214,6 +226,14 @@ class HelpPopup(ScrollablePopup):
             ("Info Bar (top row)", ""),
             ("numeric column", "Shows min/max/avg/count for column"),
         ]
+        custom_formatters = sorted(
+            set(self.formatters) - {"commas", "fixed", "off"}
+        )
+        if custom_formatters:
+            formatter_index = rows.index(("Row Filtering", ""))
+            rows[formatter_index:formatter_index] = [
+                (name, "Custom formatter") for name in custom_formatters
+            ]
         if self.extension_help:
             rows.extend([
                 ("", ""),

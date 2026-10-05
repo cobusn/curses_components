@@ -11,7 +11,9 @@ import logging
 import re
 import time
 from collections import Counter
-from typing import Optional, Protocol, Sequence
+from decimal import Decimal
+from numbers import Integral, Real
+from typing import Callable, Optional, Protocol, Sequence
 
 import pyperclip
 
@@ -32,6 +34,8 @@ class CommandHandler(Protocol):
         """Handle a command for the grid and its parsed arguments."""
 
 
+Formatter = Callable[[object], str]
+
 
 class GridComponent:
     """
@@ -40,12 +44,22 @@ class GridComponent:
     """
 
     def __init__(self, fg_color='green', bg_color='black', border_color='cyan',
-                 max_col_width=20, float_fmt='.2f'):
+                 max_col_width=20, float_fmt='.2f',
+                 default_formatter='commas'):
         self.fg_color = fg_color
         self.bg_color = bg_color
         self.border_color = border_color
         self.max_col_width = max_col_width
         self.float_fmt = float_fmt
+        self._formatters = {
+            'commas': self._format_with_commas,
+            'fixed': self._format_with_commas,
+            'off': None,
+        }
+        self.default_formatter = self._validate_formatter_name(
+            default_formatter
+        )
+        self._column_formatters = {}
         self.top_row = 0
         self.left_col = 0
         self.row_idx = 0
@@ -76,6 +90,7 @@ class GridComponent:
             "count": self._cmd_count,
             "export": self._cmd_export,
             "filter": self._cmd_filter,
+            "format": self._cmd_format,
             "freeze": self._cmd_freeze,
             "help": self._cmd_help,
             "q": self._cmd_quit,
@@ -83,6 +98,94 @@ class GridComponent:
             "sort": self._cmd_sort,
         }
         self._extension_help = {}
+
+    def register_formatter(
+            self, name: str, formatter: Optional[Formatter]) -> None:
+        """Register a formatter that can be selected for grid columns.
+
+        Args:
+            name: Formatter name used by the API and ``:format`` command.
+            formatter: Callable receiving a raw value and returning display
+                text. Use ``None`` to register a raw-value formatter.
+        """
+        formatter_name = self._normalise_formatter_name(name)
+        if formatter is not None and not callable(formatter):
+            raise TypeError("formatter must be callable or None")
+        self._formatters[formatter_name] = formatter
+        self._refresh_column_widths()
+
+    def set_default_formatter(self, name: str) -> None:
+        """Set the formatter inherited by columns without an override.
+
+        Args:
+            name: Registered formatter name.
+        """
+        self.default_formatter = self._validate_formatter_name(name)
+        self._refresh_column_widths()
+
+    def set_column_formatter(self, column: str, name: Optional[str]) -> None:
+        """Set or clear a formatter override for one column.
+
+        Args:
+            column: Column name.
+            name: Registered formatter name, or ``None`` to inherit the
+                default formatter.
+        """
+        if not isinstance(column, str):
+            raise TypeError("column name must be a string")
+        if name is None or name == 'inherit':
+            self._column_formatters.pop(column, None)
+        else:
+            self._column_formatters[column] = self._validate_formatter_name(
+                name
+            )
+        self._refresh_column_widths()
+
+    def _validate_formatter_name(self, name: str) -> str:
+        formatter_name = self._normalise_formatter_name(name)
+        if formatter_name not in self._formatters:
+            raise ValueError(f"unknown formatter: {name}")
+        return formatter_name
+
+    @staticmethod
+    def _normalise_formatter_name(name: str) -> str:
+        if not isinstance(name, str):
+            raise TypeError("formatter name must be a string")
+        formatter_name = name.strip().lower()
+        if not formatter_name or any(char.isspace() for char in formatter_name):
+            raise ValueError("formatter name must be a single token")
+        return formatter_name
+
+    def _refresh_column_widths(self) -> None:
+        if self.columns:
+            self.col_widths = self._get_col_widths()
+
+    def _get_formatter(self, column: str) -> Optional[Formatter]:
+        formatter_name = self._column_formatters.get(
+            column, self.default_formatter
+        )
+        return self._formatters[formatter_name]
+
+    def _format_cell_value(self, column: str, value) -> str:
+        formatter = self._get_formatter(column)
+        if formatter is None:
+            return str(value)
+        return formatter(value)
+
+    def _format_with_commas(self, value) -> str:
+        if isinstance(value, bool):
+            return str(value)
+
+        if isinstance(value, Integral):
+            return format(value, ',')
+
+        if isinstance(value, Decimal):
+            return format(value, ',')
+
+        if isinstance(value, Real):
+            return format(value, f",{self.float_fmt}")
+
+        return str(value)
 
     def register_command(self, name: str, handler: CommandHandler,
                          help_text: Optional[str] = None) -> None:
@@ -171,7 +274,9 @@ class GridComponent:
             for col in self.columns:
                 col_widths[col] = min(
                     self.max_col_width,
-                    max(col_widths[col], len(str(row.get(col, ''))))
+                    max(col_widths[col], len(self._format_cell_value(
+                        col, row.get(col, '')
+                    )))
                 )
         return col_widths
 
@@ -182,10 +287,10 @@ class GridComponent:
             self.col_widths[col] = max(1, self.col_widths[col] + delta)
 
     @staticmethod
-    def is_number(value_str):
-        """Checks if a string can be converted to a float."""
+    def is_number(value):
+        """Checks if a value can be converted to a float."""
         try:
-            float(value_str)
+            float(value)
             return True
         except (ValueError, TypeError):
             return False
@@ -242,7 +347,7 @@ class GridComponent:
             return
         col = self.columns[self.col_idx]
         value = self.data[self.row_idx].get(col, '')
-        display_text = f"> {str(value)}"
+        display_text = f"> {self._format_cell_value(col, value)}"
         try:
             self.stdscr.addstr(0, 0, display_text[:max_width - 1])
         except curses.error:
@@ -276,30 +381,39 @@ class GridComponent:
         """Draws the column headers."""
         if row_num_width:
             try:
-                self.stdscr.addstr(1, 0, " ".center(row_num_width), curses.color_pair(3) | curses.A_REVERSE)
+                self.stdscr.addstr(1, 0, " ".center(row_num_width), self._header_attr())
             except curses.error:
                 pass
         current_x = row_num_width
         # Frozen columns first
-        for col_name in self.columns[:self.frozen_cols]:
+        for abs_col_idx, col_name in enumerate(self.columns[:self.frozen_cols]):
             if current_x + self.col_widths[col_name] + 1 > max_width:
                 break
             try:
                 self.stdscr.addstr(1, current_x, col_name.center(self.col_widths[col_name] + 1),
-                                   curses.color_pair(3) | curses.A_REVERSE | curses.A_BOLD)
+                                   self._header_attr(abs_col_idx, bold=True))
             except curses.error:
                 pass
             current_x += self.col_widths[col_name] + 1
         # Scrollable columns
-        for col_name in self.columns[self.left_col:]:
+        for abs_col_idx, col_name in enumerate(self.columns[self.left_col:], start=self.left_col):
             if current_x + self.col_widths[col_name] + 1 > max_width:
                 break
             try:
                 self.stdscr.addstr(1, current_x, col_name.center(self.col_widths[col_name] + 1),
-                                   curses.color_pair(3) | curses.A_REVERSE)
+                                   self._header_attr(abs_col_idx))
             except curses.error:
                 pass
             current_x += self.col_widths[col_name] + 1
+
+    def _header_attr(self, abs_col_idx=None, bold=False):
+        """Return the header style, highlighting the active column header."""
+        attr = curses.color_pair(3)
+        if bold:
+            attr |= curses.A_BOLD
+        if abs_col_idx != self.col_idx:
+            attr |= curses.A_REVERSE
+        return attr
 
     def _draw_data(self, max_height, row_num_width, max_width):
         """Draws the main data rows."""
@@ -312,7 +426,10 @@ class GridComponent:
                 marker = ">" if abs_row == self.mark_row else " "
                 row_num_str = str(abs_row + 1).rjust(row_num_width - 2) + marker + " "
                 try:
-                    self.stdscr.addstr(current_y, 0, row_num_str, curses.color_pair(3) | curses.A_REVERSE)
+                    row_num_attr = curses.color_pair(3)
+                    if abs_row != self.row_idx:
+                        row_num_attr |= curses.A_REVERSE
+                    self.stdscr.addstr(current_y, 0, row_num_str, row_num_attr)
                 except curses.error:
                     pass
             current_x = row_num_width
@@ -371,15 +488,14 @@ class GridComponent:
     def _draw_cell(self, pos_y, pos_x, row_offset, abs_col_idx, row_data, col_name, max_width):
         """Draws a single cell with appropriate formatting and highlighting."""
         value = row_data.get(col_name, '')
-        if isinstance(value, float):
-            value = format(value, self.float_fmt)
+        display_value = self._format_cell_value(col_name, value)
         col_width = self.col_widths[col_name]
-        text = str(value)[:col_width]
+        text = display_value[:col_width]
         align_func = str.rjust if self.col_is_numeric.get(col_name, False) else str.ljust
         display_value = align_func(text, col_width)
         is_current_cell = (self.row_idx == self.top_row + row_offset and
                            self.col_idx == abs_col_idx)
-        value_str = str(value)
+        value_str = display_value.strip()
         has_match = (self.last_search and (
             re.search(self.last_search, value_str) if self.search_is_regex
             else self.last_search in value_str
@@ -433,6 +549,51 @@ class GridComponent:
             row = {col: self.data[self.row_idx].get(col, '') for col in self.columns}
             pyperclip.copy(json.dumps(row, ensure_ascii=False))
             self.show_error("Row copied as JSON", delay=0.8)
+
+    def _cmd_format(self, args):
+        """Set or display the formatter for a column or the whole grid."""
+        if not self.columns:
+            self.show_error("no columns to format")
+            return
+        if not args:
+            column = self.columns[self.col_idx]
+            formatter = self._column_formatters.get(
+                column, self.default_formatter
+            )
+            self.show_error(f"{column}: {formatter}")
+            return
+
+        if args[0] == 'all':
+            if len(args) != 2:
+                self.show_error("usage: format all <formatter>")
+                return
+            try:
+                self.set_default_formatter(args[1])
+            except (TypeError, ValueError) as error:
+                self.show_error(str(error))
+            return
+
+        if len(args) == 1:
+            column = self.columns[self.col_idx]
+            formatter_name = args[0]
+        elif len(args) == 2:
+            column_fragment, formatter_name = args
+            matches = [
+                column for column in self.columns
+                if column.lower().startswith(column_fragment.lower())
+            ]
+            if not matches:
+                self.show_error(f"no column matches: {column_fragment}")
+                return
+            column = matches[0]
+        else:
+            self.show_error("usage: format [all|column] <formatter>")
+            return
+
+        try:
+            self.set_column_formatter(column, formatter_name)
+        except (TypeError, ValueError) as error:
+            self.show_error(str(error))
 
     def _cmd_count(self, _cmds):
         """Display counts of distinct raw values in the current column."""
@@ -498,6 +659,7 @@ class GridComponent:
         help_rows = HelpPopup(
             self.stdscr,
             extension_help=self._extension_help,
+            formatters=self._formatters,
         ).rows
         help_key_col_width = max(
             HelpPopup.key_col_width,

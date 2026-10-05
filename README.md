@@ -94,9 +94,24 @@ arguments:
 
     grid.register_command('values', show_current_column)
 
+Number formatting uses thousands separators by default. The global formatter
+and individual column formatters can be changed from Python or command mode:
+
+    grid.set_default_formatter('commas')
+    grid.set_column_formatter('amount', 'off')
+    grid.set_column_formatter('ratio', 'percent')
+
+Custom formatters receive the raw cell value and return display text:
+
+    grid.register_formatter('percent', lambda value: f'{value:.1%}')
+
+Interactive commands are ``:format``, ``:format commas``, ``:format off``,
+``:format all commas``, and ``:format amount off``. Use ``inherit`` for a
+column to return it to the global formatter.
+
 Navigation:   j/k/h/l or arrow keys, Home/End, Page Up/Down, ^/$
 Search:       / (substring), r/<pattern> (regex), n/N (next/previous)
-Input mode:   : (enter), q (quit), sort, filter, col, freeze, copy,
+Input mode:   : (enter), q (quit), sort, filter, format, col, freeze, copy,
               copyrow, count, export <file>
 Sorting:      sort col1 col2!   (! suffix = descending)
 Filtering:    filter <val>      (replace current-column filter; case-sensitive wildcards supported)
